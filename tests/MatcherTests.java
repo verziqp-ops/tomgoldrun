@@ -8,6 +8,7 @@ public class MatcherTests {
   float[] a=new float[RgbMatcher.N],b=new float[RgbMatcher.N];
   RgbMatcher.sample(pixels,60,0,0,60,80,a);RgbMatcher.sample(brighter,60,0,0,60,80,b);
   if(Math.abs(RgbMatcher.score(a,b)-1)>1e-5)throw new AssertionError("brightness invariance");
+  if(Math.abs(RgbMatcher.scorePatch(brighter,60,0,0,60,80,a)-RgbMatcher.score(a,b))>1e-4)throw new AssertionError("optimized correlation equivalence");
   Arrays.fill(pixels,0xff555555);RgbMatcher.sample(pixels,60,0,0,60,80,b);
   if(RgbMatcher.score(a,b)!=0)throw new AssertionError("uniform patch must not match");
   // Test all configured small/edge windows for out-of-bounds access and finite scores.

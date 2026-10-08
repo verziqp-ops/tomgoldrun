@@ -34,7 +34,7 @@ public final class VisionEngine {
    if(track.hits>=2||m.score>=.92f)result.objects.add(new Planner.ObjectInfo(kind,l,m.y,m.score,ttc));
   }
   tracks.entrySet().removeIf(e->now-e.getValue().time>1200);
-  result.debug=stable+" · об’єктів: "+result.objects.size()+" · доріжка: "+(result.playerLane+1);
+  StringBuilder details=new StringBuilder();for(Planner.ObjectInfo o:result.objects){if(details.length()>120)break;details.append(o.kind).append(":").append(o.lane+1).append(" ");}result.debug="об’єктів: "+result.objects.size()+" · доріжка: "+(result.playerLane+1)+" · "+details;
   return result;
  }
 }

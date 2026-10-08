@@ -19,16 +19,16 @@ public final class Planner {
  private boolean danger(String k){return k.equals("BLOCK")||k.equals("JUMP")||k.equals("SLIDE")||k.equals("BARREL")||k.equals("PORTAL");}
  private boolean airborne(Mode m){return m==Mode.FLIGHT||m==Mode.BOSS_AIR;}
  public Decision decide(List<ObjectInfo> objects,Mode mode,long now){
-  if(now-lastAction<220)return new Decision(Action.NONE,"Очікування завершення маневру");
+  if(now-lastAction<160)return new Decision(Action.NONE,"Очікування завершення маневру");
   float[] risk=new float[3],reward=new float[3]; ObjectInfo urgent=null;
   for(ObjectInfo o:objects){
    if(o.confidence<.83f||o.lane<0||o.lane>2)continue;
    if(mode==Mode.FLIGHT&&danger(o.kind)&&!o.kind.equals("PORTAL"))continue;
    if(airborne(mode)&&!o.kind.equals("BARREL")&&!o.kind.equals("PORTAL")&&danger(o.kind))continue;
    if(danger(o.kind)){
-    float r=o.kind.equals("PORTAL")?30:((o.y>.43f||o.ttc<.65f)?100:15);
+    float r=o.kind.equals("PORTAL")?30:((o.y>.40f||o.ttc<.95f)?100:15);
     risk[o.lane]+=r;
-    if(o.lane==lane&&(o.y>.43f||o.ttc<.65f||o.kind.equals("PORTAL"))) {
+    if(o.lane==lane&&(o.y>.40f||o.ttc<.95f||o.kind.equals("PORTAL"))) {
      if(urgent==null||o.y>urgent.y)urgent=o;
     }
    }else{
@@ -46,7 +46,7 @@ public final class Planner {
    return new Decision(Action.NONE,"Немає впевненого безпечного маневру");
   }
   int bestLane=lane;float best=reward[lane]-risk[lane];
-  for(int l=Math.max(0,lane-1);l<=Math.min(2,lane+1);l++)if(risk[l]==0&&reward[l]-risk[l]>best+1.2f){bestLane=l;best=reward[l];}
+  for(int l=Math.max(0,lane-1);l<=Math.min(2,lane+1);l++)if(risk[l]==0&&reward[l]-risk[l]>best+.30f){bestLane=l;best=reward[l];}
   return new Decision(bestLane==lane?Action.NONE:bestLane<lane?Action.LEFT:Action.RIGHT,bestLane==lane?"Утримання доріжки":"Збирання предметів");
  }
 }

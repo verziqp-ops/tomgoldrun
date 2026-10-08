@@ -6,6 +6,8 @@ public class PlannerTests {
  static void check(boolean ok,String label){if(!ok)throw new AssertionError(label);cases++;}
  public static void main(String[] args){
   Planner p=new Planner();
+  check(p.decide(List.of(o("GOLD",0,.5f)),Planner.Mode.GROUND,1000).action==Planner.Action.LEFT,"a single gold target can trigger a lane change");
+  check(p.decide(List.of(o("BLOCK",1,.41f)),Planner.Mode.GROUND,1000).action!=Planner.Action.NONE,"earlier obstacle dodge");
   check(p.decide(List.of(o("BOMB",0,.5f)),Planner.Mode.BOSS_GROUND,1000).action==Planner.Action.LEFT,"boss collects bomb");
   check(p.decide(List.of(o("BOMB",0,.5f),o("BLOCK",0,.5f)),Planner.Mode.BOSS_GROUND,1000).action==Planner.Action.NONE,"bomb behind blocker skipped");
   check(p.decide(List.of(o("PORTAL",1,.3f),o("GOLD",1,.5f)),Planner.Mode.GROUND,1000).action!=Planner.Action.NONE,"portal avoided despite gold");
