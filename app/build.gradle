@@ -1,0 +1,7 @@
+plugins { id 'com.android.application' }
+android {
+ namespace 'ua.max.tomrun'
+ compileSdk 35
+ defaultConfig { applicationId 'ua.max.tomrun'; minSdk 30; targetSdk 35; versionCode 1; versionName '0.1-experimental' }
+ compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}

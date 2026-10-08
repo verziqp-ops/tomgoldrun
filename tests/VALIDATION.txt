@@ -1,0 +1,7 @@
+2026-10-08
+PASS: 28 planner checks
+PASS: matcher brightness invariance and flat-patch rejection
+PASS: 4800 edge windows
+PASS: 10 source-frame template smoke checks (not held-out accuracy)
+PASS: XML parse, asset references
+NOT RUN: Android APK build, Android runtime, Pixel device testing, independent-video accuracy
