@@ -31,15 +31,15 @@ public final class CaptureService extends Service {
  private void frame(ImageReader source){
   Image image=null;Bitmap bitmap=null;
   try{image=source.acquireLatestImage();if(image==null)return;long now=SystemClock.elapsedRealtime();if(now-lastFrame<120)return;lastFrame=now;
-   GestureService g=GestureService.instance;if(g==null||!g.inGame()){pause();return;}
+   GestureService g=GestureService.instance;if(g==null){pause();return;}if(!g.inGame()){enabled=false;g.update("Гра не визначена активною\n"+g.diagnostic(),false);return;}
    Image.Plane plane=image.getPlanes()[0];ByteBuffer b=plane.getBuffer();int[] pixels=new int[frameW*frameH];int row=plane.getRowStride(),pixel=plane.getPixelStride();
    for(int y=0;y<frameH;y++)for(int x=0;x<frameW;x++){int i=y*row+x*pixel;int r=b.get(i)&255,gg=b.get(i+1)&255,bb=b.get(i+2)&255;pixels[y*frameW+x]=0xff000000|(r<<16)|(gg<<8)|bb;}
    image.close();image=null;bitmap=Bitmap.createBitmap(pixels,frameW,frameH,Bitmap.Config.ARGB_8888);
    VisionEngine.Result result=vision.analyze(bitmap,now);planner.observeLane(result.playerLane);
    Planner.Mode mode=override<0?result.mode:Planner.Mode.values()[override];Planner.Decision decision=planner.decide(result.objects,mode,now);
-   long spent=SystemClock.elapsedRealtime()-now;
-   g.update((enabled?"АВТО":"Перегляд")+" · "+mode+" · "+spent+" мс\n"+result.debug+" · "+decision.reason,enabled);
-   if(enabled&&spent<250&&decision.action!=Planner.Action.NONE){long measured=now;main.post(()->{if(enabled&&SystemClock.elapsedRealtime()-measured<250&&GestureService.instance!=null)GestureService.instance.swipe(decision.action,()->worker.post(()->planner.committed(decision.action,SystemClock.elapsedRealtime())));});}
+   long spent=SystemClock.elapsedRealtime()-now;long finished=SystemClock.elapsedRealtime();
+   g.update((enabled?"АВТО":"Перегляд")+" · "+mode+" · "+spent+" мс\n"+result.debug+" · "+decision.reason+" · "+decision.action+"\n"+g.diagnostic(),enabled);
+   if(enabled&&decision.action!=Planner.Action.NONE){long measured=finished;main.post(()->{if(enabled&&SystemClock.elapsedRealtime()-measured<250&&GestureService.instance!=null)GestureService.instance.swipe(decision.action,()->worker.post(()->planner.committed(decision.action,SystemClock.elapsedRealtime())));});}
   }catch(Exception e){enabled=false;GestureService g=GestureService.instance;if(g!=null)g.update("Пауза: "+e.getClass().getSimpleName(),false);}
   finally{if(image!=null)image.close();if(bitmap!=null)bitmap.recycle();}
  }

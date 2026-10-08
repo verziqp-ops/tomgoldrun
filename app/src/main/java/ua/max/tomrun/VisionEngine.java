@@ -17,9 +17,7 @@ public final class VisionEngine {
   }
  }
  private static float[] sample(int[] p,int stride,int x,int y,int w,int h){float[] v=new float[RgbMatcher.N];RgbMatcher.sample(p,stride,x,y,w,h,v);return v;}
- private List<Match> find(int[] pixels,int w,int h,Template t){List<Match> candidates=new ArrayList<>();float[] patch=new float[RgbMatcher.N];for(int sw:t.sizes){int sh=Math.round(sw*t.aspect);if(sw>=w||sh>=h)continue;int ymin=Math.max(0,(int)(h*t.minY)-sh/2),ymax=Math.min(h-sh,(int)(h*t.maxY)-sh/2);for(int y=ymin;y<=ymax;y+=2)for(int x=0;x<=w-sw;x+=2){RgbMatcher.sample(pixels,w,x,y,sw,sh,patch);float s=RgbMatcher.score(t.vector,patch);if(s>=t.threshold)candidates.add(new Match(t,(x+sw*.5f)/w,(y+sh*.5f)/h,s,(float)sw/w,(float)sh/h));}}
-  candidates.sort((a,b)->Float.compare(b.score,a.score));List<Match> keep=new ArrayList<>();for(Match m:candidates){boolean duplicate=false;for(Match k:keep)if(Math.abs(k.x-m.x)<Math.max(k.w,m.w)*.65f&&Math.abs(k.y-m.y)<Math.max(k.h,m.h)*.65f){duplicate=true;break;}if(!duplicate)keep.add(m);if(keep.size()>=4)break;}return keep;
- }
+ private List<Match> find(int[] pixels,int w,int h,Template t){List<Match> out=new ArrayList<>();for(RgbMatcher.Hit hit:RgbMatcher.search(pixels,w,h,t.vector,t.aspect,t.minY,t.maxY,t.sizes,t.threshold))out.add(new Match(t,(hit.x+hit.w*.5f)/w,(hit.y+hit.h*.5f)/h,hit.score,(float)hit.w/w,(float)hit.h/h));return out;}
  private int lane(float x,float y){float spread=.07f+.28f*Math.max(0,Math.min(1,(y-.18f)/.55f));if(x<.5f-spread/2)return 0;if(x>.5f+spread/2)return 2;return 1;}
  public void reset(){tracks.clear();markers.clear();stable=Planner.Mode.GROUND;candidate=stable;modeVotes=0;}
  public Result analyze(Bitmap bitmap,long now){Result result=new Result();int w=bitmap.getWidth(),h=bitmap.getHeight();int[] pixels=new int[w*h];bitmap.getPixels(pixels,0,w,0,0,w,h);List<Match> all=new ArrayList<>();
@@ -31,11 +29,11 @@ public final class VisionEngine {
   Set<String> seen=new HashSet<>();
   for(Match m:all){String kind=m.t.kind;if(kind.equals("BOSS")||kind.equals("AIR"))continue;if(kind.equals("PLAYER")){if(result.playerLane<0)result.playerLane=lane(m.x,m.y);continue;}
    int l=lane(m.x,m.y);String key=kind+":"+l;if(!seen.add(key))continue;
-   Track track=tracks.get(key);float ttc=Float.POSITIVE_INFINITY;if(track!=null&&now-track.time<350&&Math.abs(m.y-track.y)<.22f){float vel=(m.y-track.y)/Math.max(.001f,(now-track.time)/1000f);if(vel>.025f)ttc=Math.max(0,(.67f-m.y)/vel);track.hits++;}else{track=new Track();track.hits=1;}
+   Track track=tracks.get(key);float ttc=Float.POSITIVE_INFINITY;if(track!=null&&now-track.time<1200&&Math.abs(m.y-track.y)<.22f){float vel=(m.y-track.y)/Math.max(.001f,(now-track.time)/1000f);if(vel>.025f)ttc=Math.max(0,(.67f-m.y)/vel);track.hits++;}else{track=new Track();track.hits=1;}
    track.y=m.y;track.time=now;tracks.put(key,track);
-   if(track.hits>=2)result.objects.add(new Planner.ObjectInfo(kind,l,m.y,m.score,ttc));
+   if(track.hits>=2||m.score>=.92f)result.objects.add(new Planner.ObjectInfo(kind,l,m.y,m.score,ttc));
   }
-  tracks.entrySet().removeIf(e->now-e.getValue().time>500);
+  tracks.entrySet().removeIf(e->now-e.getValue().time>1200);
   result.debug=stable+" · об’єктів: "+result.objects.size()+" · доріжка: "+(result.playerLane+1);
   return result;
  }
