@@ -23,15 +23,20 @@ public final class CaptureService extends Service {
    reader=ImageReader.newInstance(frameW,frameH,PixelFormat.RGBA_8888,2);reader.setOnImageAvailableListener(this::frame,worker);
    Intent consent=Build.VERSION.SDK_INT>=33?intent.getParcelableExtra("consent",Intent.class):intent.getParcelableExtra("consent");
    projection=getSystemService(MediaProjectionManager.class).getMediaProjection(intent.getIntExtra("code",Activity.RESULT_CANCELED),consent);
-   projection.registerCallback(new MediaProjection.Callback(){@Override public void onStop(){stopSelf();}@Override public void onCapturedContentResize(int w,int h){if(w>h){pause();stopSelf();}}},main);
+   projection.registerCallback(new MediaProjection.Callback(){@Override public void onStop(){stopSelf();}@Override public void onCapturedContentResize(int w,int h){if(w>h){pause();stopSelf();return;}if(worker!=null)worker.post(()->resizeCapture(w,h));}},main);
    display=projection.createVirtualDisplay("TomRunPilot",frameW,frameH,getResources().getDisplayMetrics().densityDpi,DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,reader.getSurface(),null,worker);
    GestureService g=GestureService.instance;if(g!=null)g.showPanel();
   }catch(Exception e){android.widget.Toast.makeText(this,"Не вдалося почати: "+e.getClass().getSimpleName(),android.widget.Toast.LENGTH_LONG).show();stopSelf();}
   return START_NOT_STICKY;
  }
+ private void resizeCapture(int width,int height){
+  if(width<=0||height<=0||display==null||closing)return;int targetHeight=Math.round(180f*height/width);if(targetHeight==frameH)return;
+  ImageReader previous=reader;ImageReader next=ImageReader.newInstance(180,targetHeight,PixelFormat.RGBA_8888,2);next.setOnImageAvailableListener(this::frame,worker);
+  display.resize(180,targetHeight,getResources().getDisplayMetrics().densityDpi);display.setSurface(next.getSurface());reader=next;frameW=180;frameH=targetHeight;previous.setOnImageAvailableListener(null,null);previous.close();vision.reset();
+ }
  private void frame(ImageReader source){
   Image image=null;Bitmap bitmap=null;
-  try{image=source.acquireLatestImage();if(image==null)return;long now=SystemClock.elapsedRealtime();if(now-lastFrame<120)return;lastFrame=now;
+  try{image=source.acquireLatestImage();if(image==null)return;if(source!=reader)return;long now=SystemClock.elapsedRealtime();if(now-lastFrame<120)return;lastFrame=now;
    GestureService g=GestureService.instance;if(g==null){pause();return;}if(!g.inGame()){enabled=false;g.update("Гра не визначена активною\n"+g.diagnostic(),false);return;}
    Image.Plane plane=image.getPlanes()[0];ByteBuffer b=plane.getBuffer();int[] pixels=new int[frameW*frameH];int row=plane.getRowStride(),pixel=plane.getPixelStride();
    for(int y=0;y<frameH;y++)for(int x=0;x<frameW;x++){int i=y*row+x*pixel;int r=b.get(i)&255,gg=b.get(i+1)&255,bb=b.get(i+2)&255;pixels[y*frameW+x]=0xff000000|(r<<16)|(gg<<8)|bb;}

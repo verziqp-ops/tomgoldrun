@@ -25,7 +25,7 @@ jobs:
       - name: Check planner and matcher
         run: |
           mkdir -p /tmp/tom-tests
-          javac -d /tmp/tom-tests app/src/main/java/ua/max/tomrun/Planner.java app/src/main/java/ua/max/tomrun/RgbMatcher.java tests/PlannerTests.java tests/MatcherTests.java
+          javac -d /tmp/tom-tests app/src/main/java/ua/max/tomrun/Planner.java app/src/main/java/ua/max/tomrun/RgbMatcher.java app/src/main/java/ua/max/tomrun/VehicleModel.java tests/PlannerTests.java tests/MatcherTests.java
           java -cp /tmp/tom-tests PlannerTests
           java -cp /tmp/tom-tests MatcherTests
       - run: gradle :app:assembleDebug --no-daemon

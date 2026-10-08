@@ -1,0 +1,10 @@
+{
+  "held_out_bus": 0.9993,
+  "tree_left": 0.001,
+  "tree_right": 0.0459,
+  "hud_gold": 0.0355,
+  "empty_road": 0.0024,
+  "training_positive_patches": 1980,
+  "training_negative_patches": 12980,
+  "limitations": "Vehicle patch classification only; fifth photo excluded from training but inspected during tuning, not an independent test set; runtime threshold 0.99; no on-device gameplay validation."
+}
