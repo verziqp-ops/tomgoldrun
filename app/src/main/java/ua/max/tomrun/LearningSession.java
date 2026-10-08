@@ -15,7 +15,8 @@ public final class LearningSession {
  }
  public int choose(byte[] state){return agent.choose(state,mask,true);}
  public void completed(byte[] state,int chosen,long now){if(!active)return;previous=state.clone();action=chosen;actionAt=now;}
- public boolean deathVisible(int[] p,int w,int h,long now){return active&&now-started>2000&&signals.observe(p,w,h);}
+ public boolean deathVisible(int[] p,int w,int h,long now){return active&&signals.observe(p,w,h);}
+ public boolean suspectedDeath(){return active&&signals.pending();}
  public void death(long now){if(!active)return;if(previous!=null)agent.remember(previous,action,-1,previous,true,mask);else if(lastState!=null)agent.remember(lastState,lastAction,-1,lastState,true,mask);agent.train(16);agent.finishEpisode(Math.max(0,now-started)/1000.0);suspend();lastState=null;}
  private byte[] lastState;private int lastAction;
  public void retainCompleted(byte[] state,int chosen,long now){completed(state,chosen,now);lastState=state.clone();lastAction=chosen;}

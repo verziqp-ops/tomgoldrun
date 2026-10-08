@@ -3,6 +3,7 @@ package ua.max.tomrun;
 public final class RunSignals {
  private int votes;
  public void reset(){votes=0;}
+ public boolean pending(){return votes>0;}
  public boolean observe(int[] p,int w,int h){boolean visible=isRevivePanel(p,w,h);votes=visible?votes+1:0;return votes>=3;}
  public static boolean isRevivePanel(int[] p,int w,int h){
   if(w<20||h<40||p.length!=w*h)return false;

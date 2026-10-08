@@ -14,6 +14,7 @@ public class LearningTests {
   LearningSession session=new LearningSession();session.start(100);byte[] s=session.observe(dark,100,200,0,100);session.retainCompleted(s,1,100);session.observe(light,100,200,0,300);check(session.agent.transitions==1,"Completed action recorded");session.death(400);check(session.agent.episodes==1&&session.agent.transitions==2&&!session.active(),"Death adds terminal experience");session.start(500);session.death(600);check(session.agent.transitions==2,"New episode does not penalize previous episode action");session.start(700);s=session.observe(dark,100,200,0,700);session.choose(s);session.observe(light,100,200,0,900);check(session.agent.transitions==2,"Uncompleted gesture not recorded");session.suspend();check(session.agent.episodes==2,"Pause not counted as death");
   int w=100,h=200;int[] panel=new int[w*h];Arrays.fill(panel,0xff222222);for(int y=78;y<126;y++)for(int x=17;x<82;x++)panel[y*w+x]=0xffaadddf;for(int y=104;y<116;y++)for(int x=38;x<64;x++)panel[y*w+x]=0xffffbb20;
   RunSignals signals=new RunSignals();check(!signals.observe(panel,w,h)&&!signals.observe(panel,w,h)&&signals.observe(panel,w,h),"Death needs three consistent frames");check(!signals.observe(dark,w,h),"Scene clears death votes");
+  session.start(1000);check(!session.deathVisible(panel,w,h,1100)&&session.suspectedDeath(),"Early death candidate freezes decisions before terminal label");
   System.out.println("Learning: "+checks+" checks passed. Toy-state learning only; gameplay skill untested.");
  }
 }

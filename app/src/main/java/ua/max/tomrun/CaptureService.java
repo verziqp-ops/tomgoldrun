@@ -60,6 +60,7 @@ public final class CaptureService extends Service {
   g.hideDetections();if(latestFrame!=null)latestFrame.recycle();latestFrame=bitmap.copy(Bitmap.Config.ARGB_8888,false);latestResult=null;
   if(!enabled||!learning.active()){latestInfo="Навчання · пауза";g.update("Почни забіг вручну й натисни Авто.\n"+learning.status()+saveStatus,false);return;}
   if(learning.deathVisible(pixels,frameW,frameH,now)){enabled=false;commandGeneration.incrementAndGet();gesturePending=false;learning.death(now);saveLearning();g.update("Виявлено SAVE ME. Поразку записано. Новий забіг вручну → Авто.\n"+learning.status()+saveStatus,false);return;}
+  if(learning.suspectedDeath()){g.update("Перевірка екрана поразки · жести призупинені\n"+learning.status(),true);return;}
   if(gesturePending){if(now-pendingSince>900){gesturePending=false;commandGeneration.incrementAndGet();learning.suspend();enabled=false;g.update("Навчання зупинено: жест не завершився",false);}return;}
   int selectedMode=override<0?0:override;byte[] state=learning.observe(pixels,frameW,frameH,selectedMode,now);int chosen=learning.choose(state);Planner.Action action=Planner.Action.values()[chosen];latestAction=action;latestInfo=learning.status();
   if(action==Planner.Action.NONE)learning.retainCompleted(state,chosen,now);
