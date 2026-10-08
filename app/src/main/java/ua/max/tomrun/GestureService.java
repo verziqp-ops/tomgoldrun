@@ -21,11 +21,12 @@ public final class GestureService extends AccessibilityService {
  public boolean inGame(){refreshActive();return GAME.equals(active);}
  public String diagnostic(){return "Активний: "+(active.isEmpty()?"невідомо":active)+" · "+gestureStatus;}
  public void test(Planner.Action a){CaptureService c=CaptureService.instance;boolean running=c!=null&&c.enabled;if(running){update("Спочатку натисни Пауза для ручного тесту",true);return;}boolean ok=swipe(a,()->update("Тест виконано: "+a+" · натисни Увімкнути авто\n"+diagnostic(),false));update((ok?"Тест відправлено: ":"Тест не відправлено: ")+a+"\n"+diagnostic(),false);}
- public boolean swipe(Planner.Action a,Runnable success){if(busy){gestureStatus="Жест ще виконується";return false;}if(!inGame()){gestureStatus="Гра не визначена активною";return false;}if(a==Planner.Action.NONE)return false;
-  Rect r=getSystemService(WindowManager.class).getMaximumWindowMetrics().getBounds();float x=r.width()*.5f,y=r.height()*.75f;
+ public boolean swipe(Planner.Action a,Runnable success){return swipe(a,success,()->{});}
+ public boolean swipe(Planner.Action a,Runnable success,Runnable cancelled){if(busy){gestureStatus="Жест ще виконується";return false;}if(!inGame()){gestureStatus="Гра не визначена активною";return false;}if(a==Planner.Action.NONE)return false;
+  Rect r=getSystemService(WindowManager.class).getMaximumWindowMetrics().getBounds();float x=r.width()*.5f,y=r.height()*.52f;
   float dx=0,dy=0;switch(a){case LEFT:dx=-r.width()*.28f;break;case RIGHT:dx=r.width()*.28f;break;case JUMP:dy=-r.height()*.20f;break;case SLIDE:dy=r.height()*.16f;break;default:return false;}
   Path p=new Path();p.moveTo(x,y);p.lineTo(x+dx,y+dy);GestureDescription g=new GestureDescription.Builder().addStroke(new GestureDescription.StrokeDescription(p,0,85)).build();busy=true;
-  boolean accepted=dispatchGesture(g,new GestureResultCallback(){@Override public void onCompleted(GestureDescription g){busy=false;gestureStatus="Виконано: "+a;success.run();}@Override public void onCancelled(GestureDescription g){busy=false;gestureStatus="Android скасував жест";}},new Handler(getMainLooper()));
+  boolean accepted=dispatchGesture(g,new GestureResultCallback(){@Override public void onCompleted(GestureDescription g){busy=false;gestureStatus="Виконано: "+a;success.run();}@Override public void onCancelled(GestureDescription g){busy=false;gestureStatus="Android скасував жест";cancelled.run();}},new Handler(getMainLooper()));
   if(!accepted){busy=false;gestureStatus="Android відхилив жест";}else gestureStatus="Відправлено: "+a;return accepted;
  }
  public void showPanel(){new Handler(getMainLooper()).post(()->{if(panel!=null)return;

@@ -25,9 +25,10 @@ jobs:
       - name: Check planner and matcher
         run: |
           mkdir -p /tmp/tom-tests
-          javac -d /tmp/tom-tests app/src/main/java/ua/max/tomrun/Planner.java app/src/main/java/ua/max/tomrun/RgbMatcher.java app/src/main/java/ua/max/tomrun/VehicleModel.java tests/PlannerTests.java tests/MatcherTests.java
+          javac -d /tmp/tom-tests app/src/main/java/ua/max/tomrun/Planner.java app/src/main/java/ua/max/tomrun/RgbMatcher.java app/src/main/java/ua/max/tomrun/VehicleModel.java app/src/main/java/ua/max/tomrun/SceneGeometry.java tests/PlannerTests.java tests/MatcherTests.java tests/SceneGeometryTests.java
           java -cp /tmp/tom-tests PlannerTests
           java -cp /tmp/tom-tests MatcherTests
+          java -cp /tmp/tom-tests SceneGeometryTests
       - run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:

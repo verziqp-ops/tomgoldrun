@@ -4,7 +4,7 @@ public final class CaptureService extends Service {
  public static volatile CaptureService instance;public volatile boolean enabled;
  private MediaProjection projection;private VirtualDisplay display;private ImageReader reader;private HandlerThread thread;private Handler worker,main;
  private Bitmap latestFrame;private VisionEngine.Result latestResult;private String latestInfo="";private int latestLane;private Planner.Action latestAction=Planner.Action.NONE;
- private VisionEngine vision;private final Planner planner=new Planner();private long lastFrame;private volatile int override=-1;private boolean closing;private int frameW,frameH;
+ private VisionEngine vision;private final Planner planner=new Planner();private long lastFrame;private boolean gesturePending;private volatile int override=-1;private boolean closing;private int frameW,frameH;
  public void pause(){enabled=false;GestureService g=GestureService.instance;if(g!=null)g.update("Перегляд · авто вимкнено",false);}
  public void enable(){if(worker==null)return;worker.post(()->{planner.reset();vision.reset();enabled=true;});}
  public void cycleMode(){override=(override+2)%5-1;}
@@ -41,12 +41,16 @@ public final class CaptureService extends Service {
    Image.Plane plane=image.getPlanes()[0];ByteBuffer b=plane.getBuffer();int[] pixels=new int[frameW*frameH];int row=plane.getRowStride(),pixel=plane.getPixelStride();
    for(int y=0;y<frameH;y++)for(int x=0;x<frameW;x++){int i=y*row+x*pixel;int r=b.get(i)&255,gg=b.get(i+1)&255,bb=b.get(i+2)&255;pixels[y*frameW+x]=0xff000000|(r<<16)|(gg<<8)|bb;}
    image.close();image=null;bitmap=Bitmap.createBitmap(pixels,frameW,frameH,Bitmap.Config.ARGB_8888);
-   VisionEngine.Result result=vision.analyze(bitmap,now);planner.observeLane(result.playerLane);
-   Planner.Mode mode=override<0?result.mode:Planner.Mode.values()[override];Planner.Decision decision=planner.decide(result.objects,mode,now);
+   VisionEngine.Result result=vision.analyze(bitmap,now);planner.observeLane(result.playerLane,SystemClock.elapsedRealtime());
+   Planner.Mode mode=override<0?result.mode:Planner.Mode.values()[override];Planner.Decision decision=gesturePending?new Planner.Decision(Planner.Action.NONE,"Очікування завершення жесту"):planner.decide(result.objects,mode,now);
    long spent=SystemClock.elapsedRealtime()-now;long finished=SystemClock.elapsedRealtime();
    if(latestFrame!=null)latestFrame.recycle();latestFrame=bitmap.copy(Bitmap.Config.ARGB_8888,false);latestResult=result;latestLane=planner.lane;latestAction=decision.action;latestInfo=(enabled?"АВТО":"Перегляд")+" · "+mode+" · "+spent+" мс · "+decision.reason;g.showDetections(result,planner.lane,decision.action);
    g.update((enabled?"АВТО":"Перегляд")+" · "+mode+" · "+spent+" мс\n"+result.debug+" · "+decision.reason+" · "+decision.action+"\n"+g.diagnostic(),enabled);
-   if(enabled&&decision.action!=Planner.Action.NONE){long measured=finished;main.post(()->{if(enabled&&SystemClock.elapsedRealtime()-measured<250&&GestureService.instance!=null)GestureService.instance.swipe(decision.action,()->worker.post(()->planner.committed(decision.action,SystemClock.elapsedRealtime())));});}
+   if(enabled&&!gesturePending&&decision.action!=Planner.Action.NONE){gesturePending=true;long measured=finished;main.post(()->{
+    GestureService service=GestureService.instance;
+    boolean sent=enabled&&SystemClock.elapsedRealtime()-measured<250&&service!=null&&service.swipe(decision.action,()->worker.post(()->{planner.committed(decision.action,SystemClock.elapsedRealtime());gesturePending=false;}),()->worker.post(()->gesturePending=false));
+    if(!sent)worker.post(()->gesturePending=false);
+   });}
   }catch(Exception e){enabled=false;GestureService g=GestureService.instance;if(g!=null)g.update("Пауза: "+e.getClass().getSimpleName(),false);}
   finally{if(image!=null)image.close();if(bitmap!=null)bitmap.recycle();}
  }

@@ -29,6 +29,19 @@ public class PlannerTests {
    Planner.Action a=p.decide(List.of(o(kind,1,.6f),o("BLOCK",0,.6f),o("BLOCK",2,.6f)),m,1000).action;
    check(a!=Planner.Action.JUMP&&a!=Planner.Action.SLIDE,"air invariant "+m+kind);
   }
+  p.reset();
+  check(p.decide(List.of(o("JUMP",1,.55f)),Planner.Mode.GROUND,2000).action==Planner.Action.JUMP,"jump is allowed with empty side lanes");
+  check(p.decide(List.of(o("SLIDE",1,.55f)),Planner.Mode.GROUND,2000).action==Planner.Action.SLIDE,"slide is allowed with empty side lanes");
+  check(p.decide(List.of(o("JUMP",1,.43f)),Planner.Mode.GROUND,2000).action==Planner.Action.NONE,"wait instead of jumping too early");
+  check(p.decide(List.of(new Planner.ObjectInfo("SLIDE",1,.43f,.95f,.4f)),Planner.Mode.GROUND,2000).action==Planner.Action.SLIDE,"approach speed can trigger earlier slide");
+  p.committed(Planner.Action.JUMP,2000);
+  check(p.decide(List.of(o("JUMP",1,.60f)),Planner.Mode.GROUND,2250).action==Planner.Action.NONE,"do not repeatedly jump for one obstacle");
+  check(p.decide(List.of(o("SLIDE",1,.60f)),Planner.Mode.GROUND,2250).action==Planner.Action.SLIDE,"a different vertical hazard is still actionable");
+  p.reset();p.committed(Planner.Action.RIGHT,3000);p.observeLane(1,3100);p.observeLane(1,3200);
+  check(p.lane==2,"stale player position does not undo completed lane change");
+  p.observeLane(1,3500);p.observeLane(1,3600);check(p.lane==1,"fresh lane observations can correct drift after manoeuvre");
+  p.reset();check(p.decide(List.of(o("BLOCK",1,.65f),o("BLOCK",0,.43f),o("BLOCK",2,.63f)),Planner.Mode.GROUND,4000).action==Planner.Action.LEFT,"escape into a lane with more clearance");
+  check(p.decide(List.of(o("BLOCK",1,.65f),o("BLOCK",0,.63f),o("BLOCK",2,.63f)),Planner.Mode.GROUND,4000).action==Planner.Action.NONE,"do not dodge into equally imminent vehicles");
   System.out.println("PASS "+cases+" planner checks");
  }
 }

@@ -7,7 +7,7 @@ public final class DetectionView extends View {
  public void set(VisionEngine.Result result,int l,Planner.Action a){boxes=new ArrayList<>(result.boxes);lane=l;action=a.name();invalidate();}
  @Override protected void onDraw(Canvas canvas){super.onDraw(canvas);draw(canvas,getWidth(),getHeight(),boxes,lane,action);}
  public static int color(String kind){switch(kind){case "GOLD":return 0xffffd740;case "BLUE":return 0xff00e5ff;case "BOMB":return 0xffff9100;case "PORTAL":return 0xffe040fb;case "PLAYER":return 0xff69f0ae;case "BOSS":case "AIR":return 0xffb388ff;default:return 0xffff5252;}}
- public static String name(String kind){switch(kind){case "GOLD":return "Золото";case "BLUE":return "Сині";case "BOMB":return "Бомбочка";case "PORTAL":return "Арка: обхід";case "PLAYER":return "Том";case "BLOCK":return "Перешкода";case "JUMP":return "Стрибок";case "SLIDE":return "Підкат";case "BARREL":return "Бочка";case "BOSS":return "Бос";case "AIR":return "Політ";default:return kind;}}
+ public static String name(String kind){switch(kind){case "GOLD":return "Золото";case "BLUE":return "Сині";case "BOMB":return "Бомбочка";case "PORTAL":return "Арка: обхід";case "PLAYER":return "Том";case "BLOCK":return "Обхід: транспорт";case "JUMP":return "Низька: стрибок";case "SLIDE":return "Перекладина: пригнутись";case "BARREL":return "Бочка";case "BOSS":return "Бос";case "AIR":return "Політ";default:return kind;}}
  public static void draw(Canvas c,int w,int h,java.util.List<VisionEngine.Box> boxes,int lane,String action){
   Paint line=new Paint(Paint.ANTI_ALIAS_FLAG);line.setStyle(Paint.Style.STROKE);line.setStrokeWidth(Math.max(1.5f,w*.003f));
   Paint text=new Paint(Paint.ANTI_ALIAS_FLAG);text.setTextSize(Math.max(10,w*.026f));text.setTypeface(Typeface.DEFAULT_BOLD);
