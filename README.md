@@ -42,3 +42,26 @@ swipes start at 52% of the screen height, above the bottom control panel.
 
 Validation: 40 planner checks, 7 perspective/coverage checks, existing matcher
 checks and Android APK compilation. No on-device collision-avoidance guarantee.
+
+### Experimental 0.7: early two-lane route
+
+The planner can now plan two consecutive lateral gestures while an intermediate
+obstacle still has enough clearance. It starts avoiding hazards earlier, queues
+the second gesture 60 ms after completion of the first, and checks the latest
+destination detections before continuing. It refuses a route through an imminent
+middle obstacle or into a portal. It expires commands derived from old frames,
+invalidates queued commands on pause, and recovers from missing gesture callbacks.
+48 planner regressions and the existing geometry/matcher checks cover the change.
+No measured on-device latency or survival improvement is available.
+
+This APK still uses the previous experimental recognition. Small cars, ramps,
+beach hazards and object-type errors are NOT fixed. RAMP decision support is
+prepared but has no validated detector supplying it.
+
+A real pretrained TorchVision SSDlite neural detector was trained locally in
+several experiments, including manually labelled gameplay and reviewed tracker
+proposals. tools/detector-validation.json records its failure on development
+images excluded from training. It is rejected for autopilot use and is NOT
+included in the APK. The scripts document dataset preparation, tracking,
+augmentation, training and ONNX export. More correct, diverse annotations and
+independent validation are needed before replacing the recognizer.

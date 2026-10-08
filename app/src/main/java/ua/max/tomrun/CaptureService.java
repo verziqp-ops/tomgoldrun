@@ -1,12 +1,12 @@
 package ua.max.tomrun;
 import android.app.*;import android.content.*;import android.content.pm.ServiceInfo;import android.graphics.*;import android.hardware.display.*;import android.media.*;import android.media.projection.*;import android.os.*;import android.view.*;import java.nio.*;
 public final class CaptureService extends Service {
- public static volatile CaptureService instance;public volatile boolean enabled;
+ public static volatile CaptureService instance;public volatile boolean enabled;private final java.util.concurrent.atomic.AtomicLong commandGeneration=new java.util.concurrent.atomic.AtomicLong();
  private MediaProjection projection;private VirtualDisplay display;private ImageReader reader;private HandlerThread thread;private Handler worker,main;
- private Bitmap latestFrame;private VisionEngine.Result latestResult;private String latestInfo="";private int latestLane;private Planner.Action latestAction=Planner.Action.NONE;
- private VisionEngine vision;private final Planner planner=new Planner();private long lastFrame;private boolean gesturePending;private volatile int override=-1;private boolean closing;private int frameW,frameH;
- public void pause(){enabled=false;GestureService g=GestureService.instance;if(g!=null)g.update("Перегляд · авто вимкнено",false);}
- public void enable(){if(worker==null)return;worker.post(()->{planner.reset();vision.reset();enabled=true;});}
+ private Bitmap latestFrame;private volatile VisionEngine.Result latestResult;private String latestInfo="";private int latestLane;private Planner.Action latestAction=Planner.Action.NONE;
+ private VisionEngine vision;private final Planner planner=new Planner();private long lastFrame;private boolean gesturePending;private long pendingSince;private volatile int override=-1;private boolean closing;private int frameW,frameH;
+ public void pause(){enabled=false;commandGeneration.incrementAndGet();GestureService g=GestureService.instance;if(g!=null)g.update("Перегляд · авто вимкнено",false);}
+ public void enable(){if(worker==null)return;worker.post(()->{commandGeneration.incrementAndGet();gesturePending=false;planner.reset();vision.reset();enabled=true;});}
  public void cycleMode(){override=(override+2)%5-1;}
  public String modeLabel(){return override<0?"Режим: авто":"Режим: "+Planner.Mode.values()[override];}
  @Override public void onCreate(){super.onCreate();instance=this;main=new Handler(getMainLooper());}
@@ -36,23 +36,32 @@ public final class CaptureService extends Service {
  }
  private void frame(ImageReader source){
   Image image=null;Bitmap bitmap=null;
-  try{image=source.acquireLatestImage();if(image==null)return;if(source!=reader)return;long now=SystemClock.elapsedRealtime();if(now-lastFrame<120)return;lastFrame=now;
+  try{image=source.acquireLatestImage();if(image==null)return;if(source!=reader)return;long now=SystemClock.elapsedRealtime();if(now-lastFrame<60)return;lastFrame=now;
    GestureService g=GestureService.instance;if(g==null){pause();return;}if(!g.inGame()){enabled=false;g.update("Гра не визначена активною\n"+g.diagnostic(),false);return;}
    Image.Plane plane=image.getPlanes()[0];ByteBuffer b=plane.getBuffer();int[] pixels=new int[frameW*frameH];int row=plane.getRowStride(),pixel=plane.getPixelStride();
    for(int y=0;y<frameH;y++)for(int x=0;x<frameW;x++){int i=y*row+x*pixel;int r=b.get(i)&255,gg=b.get(i+1)&255,bb=b.get(i+2)&255;pixels[y*frameW+x]=0xff000000|(r<<16)|(gg<<8)|bb;}
    image.close();image=null;bitmap=Bitmap.createBitmap(pixels,frameW,frameH,Bitmap.Config.ARGB_8888);
    VisionEngine.Result result=vision.analyze(bitmap,now);planner.observeLane(result.playerLane,SystemClock.elapsedRealtime());
+   if(gesturePending&&now-pendingSince>900){gesturePending=false;commandGeneration.incrementAndGet();}
    Planner.Mode mode=override<0?result.mode:Planner.Mode.values()[override];Planner.Decision decision=gesturePending?new Planner.Decision(Planner.Action.NONE,"Очікування завершення жесту"):planner.decide(result.objects,mode,now);
    long spent=SystemClock.elapsedRealtime()-now;long finished=SystemClock.elapsedRealtime();
    if(latestFrame!=null)latestFrame.recycle();latestFrame=bitmap.copy(Bitmap.Config.ARGB_8888,false);latestResult=result;latestLane=planner.lane;latestAction=decision.action;latestInfo=(enabled?"АВТО":"Перегляд")+" · "+mode+" · "+spent+" мс · "+decision.reason;g.showDetections(result,planner.lane,decision.action);
    g.update((enabled?"АВТО":"Перегляд")+" · "+mode+" · "+spent+" мс\n"+result.debug+" · "+decision.reason+" · "+decision.action+"\n"+g.diagnostic(),enabled);
-   if(enabled&&!gesturePending&&decision.action!=Planner.Action.NONE){gesturePending=true;long measured=finished;main.post(()->{
-    GestureService service=GestureService.instance;
-    boolean sent=enabled&&SystemClock.elapsedRealtime()-measured<250&&service!=null&&service.swipe(decision.action,()->worker.post(()->{planner.committed(decision.action,SystemClock.elapsedRealtime());gesturePending=false;}),()->worker.post(()->gesturePending=false));
-    if(!sent)worker.post(()->gesturePending=false);
-   });}
+   if(enabled&&!gesturePending&&decision.action!=Planner.Action.NONE){gesturePending=true;long generation=commandGeneration.incrementAndGet();pendingSince=now;main.post(()->dispatchStep(decision,decision.steps,now,generation));}
   }catch(Exception e){enabled=false;GestureService g=GestureService.instance;if(g!=null)g.update("Пауза: "+e.getClass().getSimpleName(),false);}
   finally{if(image!=null)image.close();if(bitmap!=null)bitmap.recycle();}
+ }
+ private void finishCommand(long generation){worker.post(()->{if(commandGeneration.get()==generation)gesturePending=false;});}
+ private void dispatchStep(Planner.Decision decision,int remaining,long observedAt,long generation){
+  GestureService service=GestureService.instance;
+  if(!enabled||closing||generation!=commandGeneration.get()||service==null||SystemClock.elapsedRealtime()-observedAt>550){finishCommand(generation);return;}
+  if(remaining<decision.steps&&latestResult!=null){Planner.Mode mode=override<0?latestResult.mode:Planner.Mode.values()[override];if(!planner.canContinueRoute(latestResult.objects,decision.targetLane,mode)){finishCommand(generation);return;}}
+  boolean sent=service.swipe(decision.action,()->{
+   worker.post(()->{if(commandGeneration.get()==generation)planner.committed(decision.action,SystemClock.elapsedRealtime());});
+   if(remaining>1)main.postDelayed(()->dispatchStep(decision,remaining-1,observedAt,generation),60);
+   else finishCommand(generation);
+  },()->finishCommand(generation));
+  if(!sent)finishCommand(generation);
  }
  public void saveDebugShot(){if(worker==null)return;worker.post(()->{
   if(latestFrame==null||latestResult==null){main.post(()->android.widget.Toast.makeText(this,"Ще немає кадру гри",android.widget.Toast.LENGTH_SHORT).show());return;}

@@ -1,0 +1,88 @@
+{
+  "classes": [
+    "BACKGROUND",
+    "BLOCK",
+    "RAMP",
+    "JUMP",
+    "SLIDE",
+    "PORTAL",
+    "BARREL"
+  ],
+  "train_images": 54,
+  "validation_images": 3,
+  "score_threshold": 0.5,
+  "iou_threshold": 0.5,
+  "per_class": {
+    "BLOCK": {
+      "tp": 0,
+      "fp": 1,
+      "fn": 2,
+      "precision": 0.0,
+      "recall": 0.0
+    },
+    "RAMP": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 2,
+      "precision": 0.0,
+      "recall": 0.0
+    },
+    "JUMP": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "precision": 0.0,
+      "recall": 0.0
+    },
+    "SLIDE": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "precision": 0.0,
+      "recall": 0.0
+    },
+    "PORTAL": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 1,
+      "precision": 0.0,
+      "recall": 0.0
+    },
+    "BARREL": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 1,
+      "precision": 0.0,
+      "recall": 0.0
+    }
+  },
+  "images": [
+    {
+      "file": "s06.jpg",
+      "detections": [
+        {
+          "class": "BLOCK",
+          "score": 0.545,
+          "box": [
+            0.0,
+            146.2,
+            91.1,
+            200.6
+          ],
+          "matched": false
+        }
+      ]
+    },
+    {
+      "file": "s13.jpg",
+      "detections": []
+    },
+    {
+      "file": "02-1000013097.jpg",
+      "detections": []
+    }
+  ],
+  "limitations": "Small single-video dataset and screenshots; no measured gameplay survival or device latency; unsupported classes have no validation positives.",
+  "release_status": "REJECTED: detector is not integrated into automatic gestures",
+  "validation_note": "The three images were excluded from training but inspected during development; no independent gameplay validation."
+}
