@@ -3,6 +3,7 @@ import android.app.*;import android.content.*;import android.content.pm.ServiceI
 public final class CaptureService extends Service {
  public static volatile CaptureService instance;public volatile boolean enabled;
  private MediaProjection projection;private VirtualDisplay display;private ImageReader reader;private HandlerThread thread;private Handler worker,main;
+ private Bitmap latestFrame;private VisionEngine.Result latestResult;private String latestInfo="";private int latestLane;private Planner.Action latestAction=Planner.Action.NONE;
  private VisionEngine vision;private final Planner planner=new Planner();private long lastFrame;private volatile int override=-1;private boolean closing;private int frameW,frameH;
  public void pause(){enabled=false;GestureService g=GestureService.instance;if(g!=null)g.update("Перегляд · авто вимкнено",false);}
  public void enable(){if(worker==null)return;worker.post(()->{planner.reset();vision.reset();enabled=true;});}
@@ -38,11 +39,22 @@ public final class CaptureService extends Service {
    VisionEngine.Result result=vision.analyze(bitmap,now);planner.observeLane(result.playerLane);
    Planner.Mode mode=override<0?result.mode:Planner.Mode.values()[override];Planner.Decision decision=planner.decide(result.objects,mode,now);
    long spent=SystemClock.elapsedRealtime()-now;long finished=SystemClock.elapsedRealtime();
+   if(latestFrame!=null)latestFrame.recycle();latestFrame=bitmap.copy(Bitmap.Config.ARGB_8888,false);latestResult=result;latestLane=planner.lane;latestAction=decision.action;latestInfo=(enabled?"АВТО":"Перегляд")+" · "+mode+" · "+spent+" мс · "+decision.reason;g.showDetections(result,planner.lane,decision.action);
    g.update((enabled?"АВТО":"Перегляд")+" · "+mode+" · "+spent+" мс\n"+result.debug+" · "+decision.reason+" · "+decision.action+"\n"+g.diagnostic(),enabled);
    if(enabled&&decision.action!=Planner.Action.NONE){long measured=finished;main.post(()->{if(enabled&&SystemClock.elapsedRealtime()-measured<250&&GestureService.instance!=null)GestureService.instance.swipe(decision.action,()->worker.post(()->planner.committed(decision.action,SystemClock.elapsedRealtime())));});}
   }catch(Exception e){enabled=false;GestureService g=GestureService.instance;if(g!=null)g.update("Пауза: "+e.getClass().getSimpleName(),false);}
   finally{if(image!=null)image.close();if(bitmap!=null)bitmap.recycle();}
  }
+ public void saveDebugShot(){if(worker==null)return;worker.post(()->{
+  if(latestFrame==null||latestResult==null){main.post(()->android.widget.Toast.makeText(this,"Ще немає кадру гри",android.widget.Toast.LENGTH_SHORT).show());return;}
+  android.net.Uri uri=null;Bitmap shot=null;
+  try{
+   int width=720,height=Math.round((float)latestFrame.getHeight()/latestFrame.getWidth()*width);shot=Bitmap.createBitmap(width,height+100,Bitmap.Config.ARGB_8888);Canvas canvas=new Canvas(shot);canvas.drawColor(Color.BLACK);canvas.drawBitmap(latestFrame,null,new Rect(0,0,width,height),null);DetectionView.draw(canvas,width,height,latestResult.boxes,latestLane,latestAction.name());Paint text=new Paint(Paint.ANTI_ALIAS_FLAG);text.setColor(Color.WHITE);text.setTextSize(18);canvas.drawText(latestInfo,10,height+25,text);canvas.drawText(latestResult.debug,10,height+50,text);
+   ContentValues values=new ContentValues();values.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME,"TomPilot-"+System.currentTimeMillis()+".png");values.put(android.provider.MediaStore.Images.Media.MIME_TYPE,"image/png");values.put(android.provider.MediaStore.Images.Media.RELATIVE_PATH,"Pictures/TomRunPilot");values.put(android.provider.MediaStore.Images.Media.IS_PENDING,1);uri=getContentResolver().insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,values);if(uri==null)throw new java.io.IOException("MediaStore insert failed");
+   try(java.io.OutputStream out=getContentResolver().openOutputStream(uri)){if(out==null||!shot.compress(Bitmap.CompressFormat.PNG,100,out))throw new java.io.IOException("PNG save failed");}
+   values.clear();values.put(android.provider.MediaStore.Images.Media.IS_PENDING,0);getContentResolver().update(uri,values,null,null);main.post(()->android.widget.Toast.makeText(this,"Фото з рамками збережене в Pictures/TomRunPilot",android.widget.Toast.LENGTH_LONG).show());
+  }catch(Exception e){if(uri!=null)getContentResolver().delete(uri,null,null);main.post(()->android.widget.Toast.makeText(this,"Не вдалося зберегти фото",android.widget.Toast.LENGTH_LONG).show());}finally{if(shot!=null)shot.recycle();}
+ });}
  @Override public void onDestroy(){enabled=false;instance=null;if(!closing){closing=true;if(reader!=null)reader.setOnImageAvailableListener(null,null);if(display!=null)display.release();if(projection!=null)projection.stop();if(reader!=null)reader.close();if(thread!=null)thread.quitSafely();}GestureService g=GestureService.instance;if(g!=null)g.hidePanel();super.onDestroy();}
  @Override public IBinder onBind(Intent i){return null;}
 }

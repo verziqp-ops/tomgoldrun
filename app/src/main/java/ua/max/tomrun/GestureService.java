@@ -3,6 +3,7 @@ import android.accessibilityservice.*;import android.view.accessibility.*;import
 public final class GestureService extends AccessibilityService {
  public static final String GAME="com.outfit7.talkingtomgoldrun";
  public static volatile GestureService instance;
+ private DetectionView detections;private boolean boxesVisible=true;
  private volatile boolean busy;private volatile String active="";private LinearLayout panel;private TextView status;private Button auto,mode;private volatile String gestureStatus="Ще немає жестів";
  @Override protected void onServiceConnected(){instance=this;refreshActive();}
  private void refreshActive(){
@@ -27,17 +28,25 @@ public final class GestureService extends AccessibilityService {
   boolean accepted=dispatchGesture(g,new GestureResultCallback(){@Override public void onCompleted(GestureDescription g){busy=false;gestureStatus="Виконано: "+a;success.run();}@Override public void onCancelled(GestureDescription g){busy=false;gestureStatus="Android скасував жест";}},new Handler(getMainLooper()));
   if(!accepted){busy=false;gestureStatus="Android відхилив жест";}else gestureStatus="Відправлено: "+a;return accepted;
  }
- public void showPanel(){new Handler(getMainLooper()).post(()->{if(panel!=null)return;panel=new LinearLayout(this);panel.setOrientation(1);panel.setPadding(8,4,8,4);panel.setBackgroundColor(0xdd18202c);
-  status=new TextView(this);status.setTextColor(0xffffffff);status.setTextSize(10);status.setText("Перегляд · авто вимкнено");panel.addView(status);
-  LinearLayout row=new LinearLayout(this);auto=new Button(this);auto.setText("Авто");auto.setTextSize(10);row.addView(auto);mode=new Button(this);mode.setText("Режим: авто");mode.setTextSize(10);row.addView(mode);Button stop=new Button(this);stop.setText("Стоп");stop.setTextSize(10);row.addView(stop);panel.addView(row);
-  LinearLayout tests=new LinearLayout(this);for(Planner.Action a:new Planner.Action[]{Planner.Action.LEFT,Planner.Action.RIGHT,Planner.Action.JUMP,Planner.Action.SLIDE}){Button t=new Button(this);t.setText("Тест "+a);t.setTextSize(9);tests.addView(t,new LinearLayout.LayoutParams(0,80,1));t.setOnClickListener(v->test(a));}panel.addView(tests);
+ public void showPanel(){new Handler(getMainLooper()).post(()->{if(panel!=null)return;
+  WindowManager wm=getSystemService(WindowManager.class);detections=new DetectionView(this);
+  WindowManager.LayoutParams debugParams=new WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT,WindowManager.LayoutParams.MATCH_PARENT,WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE|WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,PixelFormat.TRANSLUCENT);debugParams.gravity=Gravity.TOP|Gravity.LEFT;wm.addView(detections,debugParams);
+  panel=new LinearLayout(this);panel.setOrientation(1);panel.setPadding(4,2,4,2);panel.setBackgroundColor(0xcc18202c);
+  LinearLayout compact=new LinearLayout(this);auto=new Button(this);auto.setText("Авто");auto.setTextSize(10);compact.addView(auto,new LinearLayout.LayoutParams(0,100,1));Button expand=new Button(this);expand.setText("Панель ▾");expand.setTextSize(10);compact.addView(expand,new LinearLayout.LayoutParams(0,100,1));Button stop=new Button(this);stop.setText("Стоп");stop.setTextSize(10);compact.addView(stop,new LinearLayout.LayoutParams(0,100,1));panel.addView(compact);
+  LinearLayout details=new LinearLayout(this);details.setOrientation(1);details.setVisibility(View.GONE);panel.addView(details);
+  status=new TextView(this);status.setTextColor(0xffffffff);status.setTextSize(10);status.setText("Перегляд · авто вимкнено");details.addView(status);
+  LinearLayout options=new LinearLayout(this);mode=new Button(this);mode.setText("Режим: авто");mode.setTextSize(10);options.addView(mode,new LinearLayout.LayoutParams(0,100,1));Button boxes=new Button(this);boxes.setText("Рамки: так");boxes.setTextSize(10);options.addView(boxes,new LinearLayout.LayoutParams(0,100,1));Button photo=new Button(this);photo.setText("Фото");photo.setTextSize(10);options.addView(photo,new LinearLayout.LayoutParams(0,100,1));details.addView(options);
+  LinearLayout tests=new LinearLayout(this);for(Planner.Action a:new Planner.Action[]{Planner.Action.LEFT,Planner.Action.RIGHT,Planner.Action.JUMP,Planner.Action.SLIDE}){Button t=new Button(this);t.setText("Тест "+a);t.setTextSize(9);tests.addView(t,new LinearLayout.LayoutParams(0,80,1));t.setOnClickListener(v->test(a));}details.addView(tests);
+  expand.setOnClickListener(v->{boolean open=details.getVisibility()!=View.VISIBLE;details.setVisibility(open?View.VISIBLE:View.GONE);expand.setText(open?"Панель ▴":"Панель ▾");});
+  boxes.setOnClickListener(v->{boxesVisible=!boxesVisible;detections.setVisibility(boxesVisible?View.VISIBLE:View.GONE);boxes.setText(boxesVisible?"Рамки: так":"Рамки: ні");});
+  photo.setOnClickListener(v->{CaptureService c=CaptureService.instance;if(c!=null)c.saveDebugShot();});
   auto.setOnClickListener(v->{CaptureService c=CaptureService.instance;if(c!=null){if(c.enabled)c.pause();else if(inGame())c.enable();else status.setText("Спочатку відкрий гру");}});
   mode.setOnClickListener(v->{CaptureService c=CaptureService.instance;if(c!=null){c.cycleMode();mode.setText(c.modeLabel());}});stop.setOnClickListener(v->{CaptureService c=CaptureService.instance;if(c!=null)c.stopSelf();});
-  WindowManager.LayoutParams lp=new WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT,WindowManager.LayoutParams.WRAP_CONTENT,WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,android.graphics.PixelFormat.TRANSLUCENT);lp.gravity=Gravity.BOTTOM;
-  getSystemService(WindowManager.class).addView(panel,lp);
+  WindowManager.LayoutParams lp=new WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT,WindowManager.LayoutParams.WRAP_CONTENT,WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,PixelFormat.TRANSLUCENT);lp.gravity=Gravity.BOTTOM;wm.addView(panel,lp);
  });}
- public void update(String s,boolean enabled){new Handler(getMainLooper()).post(()->{if(status!=null)status.setText(s);if(auto!=null)auto.setText(enabled?"Пауза":"Авто");});}
- public void hidePanel(){new Handler(getMainLooper()).post(()->{if(panel!=null){getSystemService(WindowManager.class).removeView(panel);panel=null;status=null;auto=null;mode=null;}});}
+ public void showDetections(VisionEngine.Result r,int lane,Planner.Action action){new Handler(getMainLooper()).post(()->{if(detections!=null){detections.set(r,lane,action);detections.setVisibility(boxesVisible&&GAME.equals(active)?View.VISIBLE:View.GONE);}});}
+ public void update(String s,boolean enabled){new Handler(getMainLooper()).post(()->{if(detections!=null&&!GAME.equals(active))detections.setVisibility(View.GONE);if(status!=null)status.setText(s);if(auto!=null)auto.setText(enabled?"Пауза":"Авто");});}
+ public void hidePanel(){new Handler(getMainLooper()).post(()->{if(detections!=null){getSystemService(WindowManager.class).removeView(detections);detections=null;}if(panel!=null){getSystemService(WindowManager.class).removeView(panel);panel=null;status=null;auto=null;mode=null;}});}
  @Override public void onInterrupt(){CaptureService c=CaptureService.instance;if(c!=null)c.pause();busy=false;}
  @Override public void onDestroy(){onInterrupt();hidePanel();instance=null;super.onDestroy();}
 }
