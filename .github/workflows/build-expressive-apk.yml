@@ -39,6 +39,77 @@ jobs:
           sed -i '1i import java.util.Properties' src/app/build.gradle.kts
           sed -i 's/java\.util\.Properties()/Properties()/g' src/app/build.gradle.kts
 
+          # Fix SliderItem calls in the added VolumePanel: onCommit is not the last
+          # function parameter, so a trailing lambda would otherwise bind to onDrag.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("src/app/src/main/java/com/expressive/keyboard/VolumePanel.kt")
+          s = p.read_text(encoding="utf-8")
+          replacements = [
+              (
+                  'SliderItem(Icons.Rounded.Tune, "Ширина", s.widthDp, 56f..100f, { "${it.roundToInt()} dp" }) {\n'
+                  '                    VolumePanelPrefs.edit(context) { putFloat("width_dp", it) }\n'
+                  '                }',
+                  'SliderItem(Icons.Rounded.Tune, "Ширина", s.widthDp, 56f..100f, format = { "${it.roundToInt()} dp" }, onCommit = {\n'
+                  '                    VolumePanelPrefs.edit(context) { putFloat("width_dp", it) }\n'
+                  '                })'
+              ),
+              (
+                  'SliderItem(Icons.Rounded.Height, "Высота", s.heightDp, 190f..380f, { "${it.roundToInt()} dp" }) {\n'
+                  '                    VolumePanelPrefs.edit(context) { putFloat("height_dp", it) }\n'
+                  '                }',
+                  'SliderItem(Icons.Rounded.Height, "Высота", s.heightDp, 190f..380f, format = { "${it.roundToInt()} dp" }, onCommit = {\n'
+                  '                    VolumePanelPrefs.edit(context) { putFloat("height_dp", it) }\n'
+                  '                })'
+              ),
+              (
+                  'SliderItem(Icons.Rounded.Tune, "Скругление", s.cornerDp, 14f..48f, { "${it.roundToInt()} dp" }) {\n'
+                  '                    VolumePanelPrefs.edit(context) { putFloat("corner_dp", it) }\n'
+                  '                }',
+                  'SliderItem(Icons.Rounded.Tune, "Скругление", s.cornerDp, 14f..48f, format = { "${it.roundToInt()} dp" }, onCommit = {\n'
+                  '                    VolumePanelPrefs.edit(context) { putFloat("corner_dp", it) }\n'
+                  '                })'
+              ),
+              (
+                  'SliderItem(Icons.Rounded.SwapHoriz, "Отступ от края", s.sideOffsetDp, 0f..48f, { "${it.roundToInt()} dp" }) {\n'
+                  '                    VolumePanelPrefs.edit(context) { putFloat("side_offset_dp", it) }\n'
+                  '                }',
+                  'SliderItem(Icons.Rounded.SwapHoriz, "Отступ от края", s.sideOffsetDp, 0f..48f, format = { "${it.roundToInt()} dp" }, onCommit = {\n'
+                  '                    VolumePanelPrefs.edit(context) { putFloat("side_offset_dp", it) }\n'
+                  '                })'
+              ),
+              (
+                  'SliderItem(Icons.Rounded.Height, "Сдвиг по вертикали", s.verticalOffsetDp, -220f..220f, { "${it.roundToInt()} dp" }) {\n'
+                  '                    VolumePanelPrefs.edit(context) { putFloat("vertical_offset_dp", it) }\n'
+                  '                }',
+                  'SliderItem(Icons.Rounded.Height, "Сдвиг по вертикали", s.verticalOffsetDp, -220f..220f, format = { "${it.roundToInt()} dp" }, onCommit = {\n'
+                  '                    VolumePanelPrefs.edit(context) { putFloat("vertical_offset_dp", it) }\n'
+                  '                })'
+              ),
+              (
+                  'SliderItem(Icons.Rounded.Opacity, "Прозрачность", s.opacity, 0.55f..1f, { "${(it * 100).roundToInt()}%" }) {\n'
+                  '                    VolumePanelPrefs.edit(context) { putFloat("opacity", it) }\n'
+                  '                }',
+                  'SliderItem(Icons.Rounded.Opacity, "Прозрачность", s.opacity, 0.55f..1f, format = { "${(it * 100).roundToInt()}%" }, onCommit = {\n'
+                  '                    VolumePanelPrefs.edit(context) { putFloat("opacity", it) }\n'
+                  '                })'
+              ),
+              (
+                  'SliderItem(Icons.Rounded.HourglassBottom, "Время на экране", s.timeoutMs.toFloat(), 700f..5000f, { "${(it / 1000f).let { v -> String.format("%.1f", v) }} с" }) {\n'
+                  '                    VolumePanelPrefs.edit(context) { putInt("timeout_ms", it.roundToInt()) }\n'
+                  '                }',
+                  'SliderItem(Icons.Rounded.HourglassBottom, "Время на экране", s.timeoutMs.toFloat(), 700f..5000f, format = { "${(it / 1000f).let { v -> String.format("%.1f", v) }} с" }, onCommit = {\n'
+                  '                    VolumePanelPrefs.edit(context) { putInt("timeout_ms", it.roundToInt()) }\n'
+                  '                })'
+              ),
+          ]
+          for old, new in replacements:
+              if old not in s:
+                  raise SystemExit("Expected VolumePanel SliderItem block not found: " + old.splitlines()[0])
+              s = s.replace(old, new, 1)
+          p.write_text(s, encoding="utf-8")
+          PY
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
