@@ -169,12 +169,12 @@ jobs:
       - name: Build unsigned release APK
         shell: bash
         working-directory: src
-        run: ./gradlew assembleRelease --stacktrace
+        run: ./gradlew assembleDebug --stacktrace
 
       - name: Collect APK and signer
         shell: bash
         run: |
-          APK="$(find src/app/build/outputs/apk/release -name '*.apk' | head -n 1)"
+          APK="$(find src/app/build/outputs/apk/debug -name '*.apk' | head -n 1)"
           test -n "$APK"
           mkdir -p artifact
           cp "$APK" artifact/ExpressiveKeyboard-custom-unsigned.apk
