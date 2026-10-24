@@ -34,6 +34,16 @@ jobs:
           unzip -q /tmp/expressive-patch.zip             'expressive_customization_bundle/apply_patch.py'             'expressive_customization_bundle/app/src/main/res/xml/volume_accessibility_service.xml'             'expressive_customization_bundle/app/src/main/java/com/expressive/keyboard/VolumePanel.kt'             -d /tmp/expressive-patch
           python3 /tmp/expressive-patch/expressive_customization_bundle/apply_patch.py "$GITHUB_WORKSPACE/src"
 
+          # Fix one extra closing brace in the v2 VolumePanel source.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("src/app/src/main/java/com/expressive/keyboard/VolumePanel.kt")
+          s = p.read_text(encoding="utf-8")
+          s = s.replace('    )\n}}\n\ninternal fun isVolumePanelAccessibilityEnabled',
+                        '    )\n}\n\ninternal fun isVolumePanelAccessibilityEnabled', 1)
+          p.write_text(s, encoding="utf-8")
+          PY
+
           python3 - <<'PY'
           from pathlib import Path
           p = Path("src/app/build.gradle.kts")
