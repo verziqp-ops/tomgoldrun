@@ -31,119 +31,16 @@ jobs:
         run: |
           cat builder/expressive_builder/patch.part* | base64 -d > /tmp/expressive-patch.zip
           mkdir -p /tmp/expressive-patch
-          unzip -q /tmp/expressive-patch.zip \
-            'expressive_customization_bundle/apply_patch.py' \
-            'expressive_customization_bundle/KEEP_UPDATE_KEY.txt' \
-            'expressive_customization_bundle/app/expressive-update-key.jks' \
-            'expressive_customization_bundle/app/src/main/res/xml/volume_accessibility_service.xml' \
-            'expressive_customization_bundle/app/src/main/java/com/expressive/keyboard/VolumePanel.kt' \
-            'expressive_customization_bundle/expressive-signing.properties' \
-            -d /tmp/expressive-patch
+          unzip -q /tmp/expressive-patch.zip             'expressive_customization_bundle/apply_patch.py'             'expressive_customization_bundle/app/src/main/res/xml/volume_accessibility_service.xml'             'expressive_customization_bundle/app/src/main/java/com/expressive/keyboard/VolumePanel.kt'             -d /tmp/expressive-patch
           python3 /tmp/expressive-patch/expressive_customization_bundle/apply_patch.py "$GITHUB_WORKSPACE/src"
-
-          # The patch bundle contains an old signing key. It was exposed by an earlier
-          # temporary public build branch, so never use it. Build unsigned here and
-          # sign only after downloading the artifact with a new private local key.
-          rm -f src/app/expressive-update-key.jks src/expressive-signing.properties
 
           python3 - <<'PY'
           from pathlib import Path
           p = Path("src/app/build.gradle.kts")
           s = p.read_text(encoding="utf-8")
-          block = '''// One stable signing identity for both debug and release builds.
-          // Keep expressive-signing.properties + app/expressive-update-key.jks safe:
-          // losing the key means Android will refuse future in-place updates.
-          val expressiveSigningProps = java.util.Properties().apply {
-              val f = rootProject.file("expressive-signing.properties")
-              require(f.exists()) { "Missing expressive-signing.properties. Re-run the Expressive patch." }
-              f.inputStream().use { load(it) }
-          }
-
-          '''
-          s = s.replace(block, "")
-          signing = '''    signingConfigs {
-                  create("expressiveStable") {
-                      storeFile = rootProject.file(expressiveSigningProps.getProperty("storeFile"))
-                      storePassword = expressiveSigningProps.getProperty("storePassword")
-                      keyAlias = expressiveSigningProps.getProperty("keyAlias")
-                      keyPassword = expressiveSigningProps.getProperty("keyPassword")
-                  }
-              }
-
-          '''
-          s = s.replace(signing, "")
-          s = s.replace('            signingConfig = signingConfigs.getByName("expressiveStable")\n', '')
-          p.write_text(s, encoding="utf-8")
-          PY
-
-          # Fix SliderItem calls in the added VolumePanel: onCommit is not the last
-          # function parameter, so a trailing lambda would otherwise bind to onDrag.
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("src/app/src/main/java/com/expressive/keyboard/VolumePanel.kt")
-          s = p.read_text(encoding="utf-8")
-          replacements = [
-              (
-                  'SliderItem(Icons.Rounded.Tune, "Ширина", s.widthDp, 56f..100f, { "${it.roundToInt()} dp" }) {\n'
-                  '                    VolumePanelPrefs.edit(context) { putFloat("width_dp", it) }\n'
-                  '                }',
-                  'SliderItem(Icons.Rounded.Tune, "Ширина", s.widthDp, 56f..100f, format = { "${it.roundToInt()} dp" }, onCommit = {\n'
-                  '                    VolumePanelPrefs.edit(context) { putFloat("width_dp", it) }\n'
-                  '                })'
-              ),
-              (
-                  'SliderItem(Icons.Rounded.Height, "Высота", s.heightDp, 190f..380f, { "${it.roundToInt()} dp" }) {\n'
-                  '                    VolumePanelPrefs.edit(context) { putFloat("height_dp", it) }\n'
-                  '                }',
-                  'SliderItem(Icons.Rounded.Height, "Высота", s.heightDp, 190f..380f, format = { "${it.roundToInt()} dp" }, onCommit = {\n'
-                  '                    VolumePanelPrefs.edit(context) { putFloat("height_dp", it) }\n'
-                  '                })'
-              ),
-              (
-                  'SliderItem(Icons.Rounded.Tune, "Скругление", s.cornerDp, 14f..48f, { "${it.roundToInt()} dp" }) {\n'
-                  '                    VolumePanelPrefs.edit(context) { putFloat("corner_dp", it) }\n'
-                  '                }',
-                  'SliderItem(Icons.Rounded.Tune, "Скругление", s.cornerDp, 14f..48f, format = { "${it.roundToInt()} dp" }, onCommit = {\n'
-                  '                    VolumePanelPrefs.edit(context) { putFloat("corner_dp", it) }\n'
-                  '                })'
-              ),
-              (
-                  'SliderItem(Icons.Rounded.SwapHoriz, "Отступ от края", s.sideOffsetDp, 0f..48f, { "${it.roundToInt()} dp" }) {\n'
-                  '                    VolumePanelPrefs.edit(context) { putFloat("side_offset_dp", it) }\n'
-                  '                }',
-                  'SliderItem(Icons.Rounded.SwapHoriz, "Отступ от края", s.sideOffsetDp, 0f..48f, format = { "${it.roundToInt()} dp" }, onCommit = {\n'
-                  '                    VolumePanelPrefs.edit(context) { putFloat("side_offset_dp", it) }\n'
-                  '                })'
-              ),
-              (
-                  'SliderItem(Icons.Rounded.Height, "Сдвиг по вертикали", s.verticalOffsetDp, -220f..220f, { "${it.roundToInt()} dp" }) {\n'
-                  '                    VolumePanelPrefs.edit(context) { putFloat("vertical_offset_dp", it) }\n'
-                  '                }',
-                  'SliderItem(Icons.Rounded.Height, "Сдвиг по вертикали", s.verticalOffsetDp, -220f..220f, format = { "${it.roundToInt()} dp" }, onCommit = {\n'
-                  '                    VolumePanelPrefs.edit(context) { putFloat("vertical_offset_dp", it) }\n'
-                  '                })'
-              ),
-              (
-                  'SliderItem(Icons.Rounded.Opacity, "Прозрачность", s.opacity, 0.55f..1f, { "${(it * 100).roundToInt()}%" }) {\n'
-                  '                    VolumePanelPrefs.edit(context) { putFloat("opacity", it) }\n'
-                  '                }',
-                  'SliderItem(Icons.Rounded.Opacity, "Прозрачность", s.opacity, 0.55f..1f, format = { "${(it * 100).roundToInt()}%" }, onCommit = {\n'
-                  '                    VolumePanelPrefs.edit(context) { putFloat("opacity", it) }\n'
-                  '                })'
-              ),
-              (
-                  'SliderItem(Icons.Rounded.HourglassBottom, "Время на экране", s.timeoutMs.toFloat(), 700f..5000f, { "${(it / 1000f).let { v -> String.format("%.1f", v) }} с" }) {\n'
-                  '                    VolumePanelPrefs.edit(context) { putInt("timeout_ms", it.roundToInt()) }\n'
-                  '                }',
-                  'SliderItem(Icons.Rounded.HourglassBottom, "Время на экране", s.timeoutMs.toFloat(), 700f..5000f, format = { "${(it / 1000f).let { v -> String.format("%.1f", v) }} с" }, onCommit = {\n'
-                  '                    VolumePanelPrefs.edit(context) { putInt("timeout_ms", it.roundToInt()) }\n'
-                  '                })'
-              ),
-          ]
-          for old, new in replacements:
-              if old not in s:
-                  raise SystemExit("Expected VolumePanel SliderItem block not found: " + old.splitlines()[0])
-              s = s.replace(old, new, 1)
+          s = s.replace("versionCode = 15", "versionCode = (System.currentTimeMillis() / 1000L).toInt()")
+          s = s.replace('versionName = "11.1.1"', 'versionName = "11.1.1-custom.2"')
+          s = s.replace('            applicationIdSuffix = ".debug"\n', '')
           p.write_text(s, encoding="utf-8")
           PY
 
@@ -162,11 +59,9 @@ jobs:
         run: |
           chmod +x gradlew
           mkdir -p app/src/main/assets/fonts
-          curl -fsSL --retry 3 -o app/src/main/assets/fonts/rounded.ttf \
-            "https://raw.githubusercontent.com/google/fonts/main/ofl/nunito/Nunito%5Bwght%5D.ttf" \
-            || rm -f app/src/main/assets/fonts/rounded.ttf
+          curl -fsSL --retry 3 -o app/src/main/assets/fonts/rounded.ttf             "https://raw.githubusercontent.com/google/fonts/main/ofl/nunito/Nunito%5Bwght%5D.ttf"             || rm -f app/src/main/assets/fonts/rounded.ttf
 
-      - name: Build unsigned release APK
+      - name: Build updateable APK
         shell: bash
         working-directory: src
         run: ./gradlew assembleDebug --stacktrace
@@ -177,7 +72,7 @@ jobs:
           APK="$(find src/app/build/outputs/apk/debug -name '*.apk' | head -n 1)"
           test -n "$APK"
           mkdir -p artifact
-          cp "$APK" artifact/ExpressiveKeyboard-custom-unsigned.apk
+          cp "$APK" artifact/ExpressiveKeyboard-pixel-hitbox-v2-unsigned.apk
           BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
           test -f "$BT/lib/apksigner.jar"
           cp "$BT/lib/apksigner.jar" artifact/apksigner.jar
@@ -185,7 +80,7 @@ jobs:
       - name: Upload APK build
         uses: actions/upload-artifact@v4
         with:
-          name: ExpressiveKeyboard-custom-unsigned
+          name: ExpressiveKeyboard-pixel-hitbox-v2-unsigned
           path: artifact/*
           if-no-files-found: error
           retention-days: 1
