@@ -34,6 +34,11 @@ jobs:
           unzip -q /tmp/expressive-patch.zip             'expressive_customization_bundle/apply_patch.py'             'expressive_customization_bundle/KEEP_UPDATE_KEY.txt'             'expressive_customization_bundle/app/expressive-update-key.jks'             'expressive_customization_bundle/app/src/main/res/xml/volume_accessibility_service.xml'             'expressive_customization_bundle/app/src/main/java/com/expressive/keyboard/VolumePanel.kt'             'expressive_customization_bundle/expressive-signing.properties'             -d /tmp/expressive-patch
           python3 /tmp/expressive-patch/expressive_customization_bundle/apply_patch.py "$GITHUB_WORKSPACE/src"
 
+          # Kotlin DSL has a Gradle 'java' extension which shadows java.util at script scope.
+          # Import Properties explicitly so the stable signing config compiles.
+          sed -i '1i import java.util.Properties' src/app/build.gradle.kts
+          sed -i 's/java\.util\.Properties()/Properties()/g' src/app/build.gradle.kts
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
