@@ -1,0 +1,116 @@
+{
+                SettingsSection("Форма") {
+                    GroupItem {
+                        Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+                            Text(
+                                tr("Форма"),
+                                Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            VolumeShapePicker(s.shapePreset) { preset ->
+                                VolumePanelPrefs.edit(context) {
+                                    putString("shape_preset", preset.id)
+                                    putInt("wave_count", preset.defaultWaves)
+                                    putFloat("wave_depth_percent", preset.defaultAmplitude)
+                                }
+                            }
+                        }
+                    }
+                    AnimatedVisibility(s.shapePreset != ExpressiveShapePreset.CIRCLE.id) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            SliderItem(
+                                Icons.Rounded.Tune, "Количество лепестков", s.waveCount.toFloat(), 3f..24f,
+                                format = { it.roundToInt().toString() }, steps = 20,
+                                onCommit = { VolumePanelPrefs.edit(context) { putInt("wave_count", it.roundToInt()) } }
+                            )
+                            SliderItem(
+                                Icons.Rounded.Tune, "Глубина формы", s.waveDepthPercent, 0f..16f,
+                                format = { "${it.roundToInt()}%" },
+                                onCommit = { VolumePanelPrefs.edit(context) { putFloat("wave_depth_percent", it) } }
+                            )
+                        }
+                    }
+                }
+            }
+
+            AnimatedVisibility(s.colorMode == "CUSTOM") {
+                SettingsSection("Свои цвета") {
+                    ColorRow("Фон панели", s.backgroundColor, palette.background) { colorPicker = "background" }
+                    ColorRow("Акцент панели", s.accentColor, palette.accent) { colorPicker = "accent" }
+                }
+            }
+
+            SettingsSection("Размер и положение") {
+                ChoiceItem(
+                    Icons.Rounded.SwapHoriz, "Сторона", null,
+                    listOf("LEFT" to "Слева", "RIGHT" to "Справа"), s.position
+                ) { VolumePanelPrefs.edit(context) { putString("position", it) } }
+                SliderItem(
+                    Icons.Rounded.Tune, "Ширина панели", s.widthDp, 50f..78f,
+                    format = { "${it.roundToInt()} dp" },
+                    onCommit = { VolumePanelPrefs.edit(context) { putFloat("width_dp", it) } }
+                )
+                SliderItem(
+                    Icons.Rounded.Height, "Высота", s.heightDp, 230f..340f,
+                    format = { "${it.roundToInt()} dp" },
+                    onCommit = { VolumePanelPrefs.edit(context) { putFloat("height_dp", it) } }
+                )
+                SliderItem(
+                    Icons.Rounded.Tune, "Толщина ползунка", s.trackWidthDp, 22f..40f,
+                    format = { "${it.roundToInt()} dp" },
+                    onCommit = { VolumePanelPrefs.edit(context) { putFloat("track_width_dp", it) } }
+                )
+                SliderItem(
+                    Icons.Rounded.Tune, "Скругление", s.cornerDp, 20f..39f,
+                    format = { "${it.roundToInt()} dp" },
+                    onCommit = { VolumePanelPrefs.edit(context) { putFloat("corner_dp", it) } }
+                )
+                SliderItem(
+                    Icons.Rounded.SwapHoriz, "Отступ от края", s.sideOffsetDp, 0f..36f,
+                    format = { "${it.roundToInt()} dp" },
+                    onCommit = { VolumePanelPrefs.edit(context) { putFloat("side_offset_dp", it) } }
+                )
+                SliderItem(
+                    Icons.Rounded.Height, "Сдвиг по вертикали", s.verticalOffsetDp, -220f..220f,
+                    format = { "${it.roundToInt()} dp" },
+                    onCommit = { VolumePanelPrefs.edit(context) { putFloat("vertical_offset_dp", it) } }
+                )
+                SliderItem(
+                    Icons.Rounded.Opacity, "Прозрачность", s.opacity, 0.72f..1f,
+                    format = { "${(it * 100).roundToInt()}%" },
+                    onCommit = { VolumePanelPrefs.edit(context) { putFloat("opacity", it) } }
+                )
+            }
+
+            SettingsSection("Иконки SVG") {
+                SvgPickerItem("Динамик / mute", s.muteSvg.isNotBlank()) {
+                    svgTarget = "mute"
+                    svgLauncher.launch(arrayOf("image/svg+xml", "application/xml", "text/xml"))
+                }
+                SvgPickerItem("Медиа / нота", s.mediaSvg.isNotBlank()) {
+                    svgTarget = "media"
+                    svgLauncher.launch(arrayOf("image/svg+xml", "application/xml", "text/xml"))
+                }
+                SvgPickerItem("Настройки", s.settingsSvg.isNotBlank()) {
+                    svgTarget = "settings"
+                    svgLauncher.launch(arrayOf("image/svg+xml", "application/xml", "text/xml"))
+                }
+                ActionItem(Icons.Rounded.DeleteSweep, "Сбросить свои SVG", "Вернуть встроенные векторные иконки", onClick = {
+                    listOf(s.muteSvg, s.mediaSvg, s.settingsSvg).filter { it.isNotBlank() }.forEach { runCatching { File(it).delete() } }
+                    VolumePanelPrefs.edit(context) {
+                        remove("mute_svg"); remove("media_svg"); remove("settings_svg")
+                    }
+                })
+            }
+
+            SettingsSection("Поведение") {
+                ToggleItem(Icons.Rounded.Percent, "Показывать процент", "Pixel по умолчанию процент не показывает", s.showPercent) {
+                    VolumePanelPrefs.edit(context) { putBoolean("show_percent", it) }
+                }
+                ToggleItem(Icons.Rounded.Animation, "Анимация появления", "Сдвиг от края + плавное затухание", s.animate) {
+                    VolumePanelPrefs.edit(context) { putBoolean("animate", it) }
+                }
+                ToggleItem(Icons.Rounded.Vibration, "Лёгкая вибрация", "При изменении уровня пальцем", s.haptic) {
+                    VolumePanelPrefs.edit(context) { putBoo
