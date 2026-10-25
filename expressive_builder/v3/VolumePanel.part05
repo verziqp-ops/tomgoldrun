@@ -1,0 +1,155 @@
+    .setContentTitle("Expressive volume")
+            .setContentText("Custom volume panel is handling the volume keys")
+            .setSilent(true)
+            .setOngoing(false)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .build()
+        runCatching { startForeground(NOTIFICATION_ID, notification) }
+        main.removeCallbacks(leaveForeground)
+        main.postDelayed(leaveForeground, 4500L)
+    }
+
+    override fun onDestroy() {
+        main.removeCallbacksAndMessages(null)
+        panel?.let { runCatching { if (it.parent != null) wm.removeViewImmediate(it) } }
+        panel = null
+        super.onDestroy()
+    }
+
+    companion object {
+        private const val CHANNEL = "expressive_volume_runtime"
+        private const val NOTIFICATION_ID = 7611
+    }
+}
+
+private data class PanelColors(
+    val background: Int,
+    val surface: Int,
+    val track: Int,
+    val accent: Int,
+    val onAccent: Int,
+    val icon: Int
+)
+
+private fun systemPaletteColor(context: Context, name: String, fallback: Int): Int {
+    if (Build.VERSION.SDK_INT < 31) return fallback
+    val id = context.resources.getIdentifier(name, "color", "android")
+    return if (id != 0) runCatching { context.getColor(id) }.getOrDefault(fallback) else fallback
+}
+
+private fun resolveThemeColor(context: Context, attr: Int, fallback: Int): Int {
+    val a = context.obtainStyledAttributes(intArrayOf(attr))
+    return try { a.getColor(0, fallback) } finally { a.recycle() }
+}
+
+private fun resolvePanelColors(context: Context, s: VolumePanelSettings): PanelColors {
+    val keyboard = KeyboardPrefs.current(context)
+    val night = (context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+        android.content.res.Configuration.UI_MODE_NIGHT_YES
+
+    val sysAccent = systemPaletteColor(context, if (night) "system_accent1_200" else "system_accent1_600", 0xFFA8C7FA.toInt())
+    val sysOnAccent = systemPaletteColor(context, if (night) "system_accent1_900" else "system_accent1_50", if (night) 0xFF0B1D35.toInt() else AndroidColor.WHITE)
+    val sysBg = systemPaletteColor(context, if (night) "system_neutral1_900" else "system_neutral1_50", if (night) 0xFF111416.toInt() else 0xFFF4F7F9.toInt())
+    val sysSurface = systemPaletteColor(context, if (night) "system_neutral2_800" else "system_neutral2_100", if (night) 0xFF20262B.toInt() else 0xFFE4E8EC.toInt())
+    val sysTrack = systemPaletteColor(context, if (night) "system_neutral2_700" else "system_neutral2_200", if (night) 0xFF30373D.toInt() else 0xFFD5DADE.toInt())
+    val sysIcon = systemPaletteColor(context, if (night) "system_neutral1_100" else "system_neutral1_900", if (night) 0xFFE3E7EA.toInt() else 0xFF202124.toInt())
+
+    val themeBg = resolveThemeColor(context, android.R.attr.colorBackground, sysBg)
+    val themeAccent = resolveThemeColor(context, android.R.attr.colorAccent, keyboard.seedColor)
+    val kbBg = if (keyboard.colorBackground != 0) keyboard.colorBackground else themeBg
+    val kbAccent = when {
+        keyboard.colorAccent != 0 -> keyboard.colorAccent
+        keyboard.colorSource == "SEED" -> keyboard.seedColor
+        else -> themeAccent
+    }
+
+    return when (s.colorMode) {
+        "KEYBOARD" -> PanelColors(
+            kbBg,
+            blendArgb(kbBg, kbAccent, if (night) 0.16f else 0.10f),
+            blendArgb(kbBg, kbAccent, if (night) 0.27f else 0.18f),
+            kbAccent,
+            readableTextColor(kbAccent),
+            readableTextColor(kbBg)
+        )
+        "CUSTOM" -> {
+            val bg = if (s.backgroundColor != 0) s.backgroundColor else kbBg
+            val ac = if (s.accentColor != 0) s.accentColor else kbAccent
+            PanelColors(bg, blendArgb(bg, ac, 0.15f), blendArgb(bg, ac, 0.28f), ac, readableTextColor(ac), readableTextColor(bg))
+        }
+        else -> PanelColors(sysBg, sysSurface, sysTrack, sysAccent, sysOnAccent, sysIcon)
+    }
+}
+
+private fun blendArgb(a: Int, b: Int, t: Float): Int {
+    val x = t.coerceIn(0f, 1f)
+    fun c(shift: Int) = ((a shr shift and 0xFF) + (((b shr shift and 0xFF) - (a shr shift and 0xFF)) * x)).roundToInt().coerceIn(0, 255)
+    return AndroidColor.argb(c(24), c(16), c(8), c(0))
+}
+
+private class ExpressiveVolumeView(context: Context) : View(context) {
+    var onFractionChanged: ((Float) -> Unit)? = null
+    var onMuteToggle: (() -> Unit)? = null
+    var onSettingsClick: (() -> Unit)? = null
+    var onOutsideTouch: (() -> Unit)? = null
+
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val path = Path()
+    private val svgCache = HashMap<String, SVG>()
+    private var settings = VolumePanelSettings()
+    private var fraction = 0f
+    private var targetFraction = 0f
+    private var fractionAnimator: ValueAnimator? = null
+    private var hasBound = false
+    private var dragging = false
+    private var colors = PanelColors(0xFF111416.toInt(), 0xFF20262B.toInt(), 0xFF30373D.toInt(), 0xFFA8C7FA.toInt(), 0xFF0B1D35.toInt(), AndroidColor.WHITE)
+    private var lastHapticStep = -1
+    private val sliderRect = RectF()
+    private val muteRect = RectF()
+    private val settingsRect = RectF()
+
+    fun bind(s: VolumePanelSettings, value: Int, max: Int, palette: PanelColors, animateValue: Boolean = true) {
+        settings = s
+        colors = palette
+        val next = if (max <= 0) 0f else (value.toFloat() / max.toFloat()).coerceIn(0f, 1f)
+        targetFraction = next
+        contentDescription = "Volume ${(next * 100).roundToInt()} percent"
+        fractionAnimator?.cancel()
+        if (!hasBound || !animateValue || dragging || abs(next - fraction) < 0.005f) {
+            fraction = next
+            invalidate()
+        } else {
+            fractionAnimator = ValueAnimator.ofFloat(fraction, next).apply {
+                duration = 115L
+                interpolator = DecelerateInterpolator()
+                addUpdateListener {
+                    fraction = (it.animatedValue as Float).coerceIn(0f, 1f)
+                    invalidate()
+                }
+                start()
+            }
+        }
+        hasBound = true
+    }
+
+    private fun dp(v: Float): Float = v * resources.displayMetrics.density
+    private fun alpha(color: Int, a: Float): Int =
+        (color and 0x00FFFFFF) or (((a.coerceIn(0f, 1f) * 255f).roundToInt()) shl 24)
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val w = width.toFloat()
+        val h = height.toFloat()
+        if (w <= 1f || h <= 1f) return
+
+        val outerInset = dp(1f)
+        val outer = RectF(outerInset, outerInset, w - outerInset, h - outerInset)
+        val radius = min(dp(settings.cornerDp), w / 2f)
+        paint.style = Paint.Style.FILL
+        paint.color = alpha(colors.background, settings.opacity)
+        canvas.drawRoundRect(outer, radius, radius, paint)
+
+        val pad = dp(7f)
+        val actionSize = min(w - pad * 2f, dp(44f)).coerceAtLeast(dp(34f))
+        val cx = w / 2f
+        muteRect.set(cx - actionSize / 2f, pad, cx
