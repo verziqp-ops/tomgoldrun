@@ -1,0 +1,29 @@
+nt()
+        if (step != lastHapticStep) {
+            lastHapticStep = step
+            if (settings.haptic) performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+            onFractionChanged?.invoke(f)
+        }
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
+    }
+
+    companion object {
+        private const val DEFAULT_MUTE_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#TINT#" d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5l5 7m0-7l-5 7" fill="none" stroke="#TINT#" stroke-width="2.1" stroke-linecap="round"/></svg>"""
+        private const val DEFAULT_MEDIA_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#TINT#" d="M9 17.2V6.3l10-2.1v10.1a3.35 3.35 0 1 1-2-3.07V7.1l-6 1.27v8.83A3.35 3.35 0 1 1 9 14.13z"/></svg>"""
+        private const val DEFAULT_SETTINGS_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="#TINT#" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></g><g fill="#TINT#"><circle cx="9" cy="7" r="2.2"/><circle cx="15" cy="12" r="2.2"/><circle cx="11" cy="17" r="2.2"/></g></svg>"""
+    }
+}
+
+private fun String.withTint(color: Int): String = replace("#TINT#", String.format("#%06X", 0xFFFFFF and color))
+
+private fun readableTextColor(bg: Int): Int {
+    val r = AndroidColor.red(bg) / 255f
+    val g = AndroidColor.green(bg) / 255f
+    val b = AndroidColor.blue(bg) / 255f
+    val l = 0.2126f * r + 0.7152f * g + 0.0722f * b
+    return if (l > 0.5f) AndroidColor.rgb(25, 25, 28) else AndroidColor.WHITE
+}
