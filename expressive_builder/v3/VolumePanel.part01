@@ -1,0 +1,140 @@
+  fun observe(): State<VolumePanelSettings> {
+        ensureInit(LocalContext.current)
+        return state
+    }
+
+    fun edit(context: Context, block: SharedPreferences.Editor.() -> Unit) {
+        prefs(context).edit().apply(block).apply()
+    }
+
+    private fun read(p: SharedPreferences) = VolumePanelSettings(
+        enabled = p.getBoolean("enabled", true),
+        style = p.getString("style", "PIXEL") ?: "PIXEL",
+        colorMode = p.getString("color_mode", "SYSTEM") ?: "SYSTEM",
+        shapePreset = p.getString("shape_preset", ExpressiveShapePreset.COOKIE_12.id)
+            ?: ExpressiveShapePreset.COOKIE_12.id,
+        waveCount = p.getInt("wave_count", 12).coerceIn(3, 24),
+        waveDepthPercent = p.getFloat("wave_depth_percent", 6f).coerceIn(0f, 16f),
+        position = p.getString("position", "RIGHT") ?: "RIGHT",
+        widthDp = p.getFloat("width_dp", 62f).coerceIn(50f, 78f),
+        heightDp = p.getFloat("height_dp", 290f).coerceIn(230f, 340f),
+        trackWidthDp = p.getFloat("track_width_dp", 30f).coerceIn(22f, 40f),
+        cornerDp = p.getFloat("corner_dp", 31f).coerceIn(20f, 39f),
+        sideOffsetDp = p.getFloat("side_offset_dp", 10f).coerceIn(0f, 36f),
+        verticalOffsetDp = p.getFloat("vertical_offset_dp", 0f).coerceIn(-220f, 220f),
+        opacity = p.getFloat("opacity", 0.96f).coerceIn(0.72f, 1f),
+        timeoutMs = p.getInt("timeout_ms", 1750).coerceIn(700, 5000),
+        showPercent = p.getBoolean("show_percent", false),
+        animate = p.getBoolean("animate", true),
+        haptic = p.getBoolean("haptic", true),
+        backgroundColor = p.getInt("background_color", 0),
+        accentColor = p.getInt("accent_color", 0),
+        muteSvg = p.getString("mute_svg", "") ?: "",
+        mediaSvg = p.getString("media_svg", "") ?: "",
+        settingsSvg = p.getString("settings_svg", "") ?: ""
+    )
+}
+
+internal fun isVolumePanelAccessibilityEnabled(context: Context): Boolean {
+    val target = ComponentName(context, VolumePanelAccessibilityService::class.java)
+    val enabled = Settings.Secure.getString(
+        context.contentResolver,
+        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+    ).orEmpty()
+    return enabled.split(':').mapNotNull(ComponentName::unflattenFromString).any {
+        it.packageName == target.packageName && it.className == target.className
+    }
+}
+
+@Composable
+internal fun VolumePanelSettingsPage(keyboard: KeyboardSettings) {
+    val context = LocalContext.current
+    val s by VolumePanelPrefs.observe()
+    val palette = rememberKeyPalette(keyboard)
+    val owner = LocalLifecycleOwner.current
+    var serviceEnabled by remember { mutableStateOf(isVolumePanelAccessibilityEnabled(context)) }
+    var colorPicker by remember { mutableStateOf<String?>(null) }
+    var svgTarget by remember { mutableStateOf<String?>(null) }
+
+    val svgLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        val target = svgTarget
+        if (uri != null && target != null) {
+            val result = saveVolumeSvg(context, uri, target)
+            if (result != null) {
+                VolumePanelPrefs.edit(context) { putString("${target}_svg", result) }
+                Toast.makeText(context, "SVG сохранён", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "Не удалось открыть SVG", Toast.LENGTH_SHORT).show()
+            }
+        }
+        svgTarget = null
+    }
+
+    DisposableEffect(owner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) serviceEnabled = isVolumePanelAccessibilityEnabled(context)
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+
+    SettingsSection("Предпросмотр") {
+        GroupItem {
+            Box(
+                Modifier.fillMaxWidth().height(310.dp).padding(14.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow),
+                contentAlignment = if (s.position == "LEFT") Alignment.CenterStart else Alignment.CenterEnd
+            ) {
+                AndroidView(
+                    factory = { ExpressiveVolumeView(it) },
+                    update = { it.bind(s, 36, 100, resolvePanelColors(context, s), animateValue = false) },
+                    modifier = Modifier.padding(horizontal = 18.dp)
+                        .width(s.widthDp.dp)
+                        .height(min(s.heightDp, 278f).dp)
+                )
+            }
+        }
+    }
+
+    SettingsSection("Подключение") {
+        ActionItem(
+            Icons.Rounded.AccessibilityNew,
+            if (serviceEnabled) "Сервис панели включён" else "Включить сервис панели",
+            if (serviceEnabled) "Кнопки громкости перехватываются Expressive Keyboard" else "Нужен Accessibility для аппаратных кнопок громкости",
+            onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
+            trailing = {
+                Box(
+                    Modifier.size(12.dp).clip(CircleShape)
+                        .background(if (serviceEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
+                )
+            }
+        )
+        ToggleItem(Icons.Rounded.VolumeUp, "Своя панель громкости", "Вместо системной компактной панели", s.enabled) {
+            VolumePanelPrefs.edit(context) { putBoolean("enabled", it) }
+            if (it && !serviceEnabled) {
+                context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
+        }
+    }
+
+    AnimatedVisibility(s.enabled) {
+        Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            SettingsSection("Стиль") {
+                ChoiceItem(
+                    Icons.Rounded.Tune,
+                    "Стиль панели",
+                    "Pixel — компактный; Expressive — формы как у клавиатуры",
+                    listOf("PIXEL" to "Pixel", "EXPRESSIVE" to "Expressive"),
+                    s.style
+                ) { VolumePanelPrefs.edit(context) { putString("style", it) } }
+                ChoiceItem(
+                    Icons.Rounded.FormatColorFill,
+                    "Цвета",
+                    "Pixel Material You, палитра клавиатуры или свои",
+                    listOf("SYSTEM" to "Pixel", "KEYBOARD" to "Клавиатура", "CUSTOM" to "Свои"),
+                    s.colorMode
+                ) { VolumePanelPrefs.edit(context) { putString("color_mode", it) } }
+            }
+
+            AnimatedVisibility(s.style == "EXPRESSIVE") 
