@@ -26,7 +26,7 @@ jobs:
           ref: main
           path: src
 
-      - name: Restore customization patch
+      - name: Apply keyboard + volume patches
         shell: bash
         run: |
           cat builder/expressive_builder/patch.part* | base64 -d > /tmp/expressive-patch.zip
@@ -34,7 +34,7 @@ jobs:
           unzip -q /tmp/expressive-patch.zip             'expressive_customization_bundle/apply_patch.py'             'expressive_customization_bundle/app/src/main/res/xml/volume_accessibility_service.xml'             'expressive_customization_bundle/app/src/main/java/com/expressive/keyboard/VolumePanel.kt'             -d /tmp/expressive-patch
           python3 /tmp/expressive-patch/expressive_customization_bundle/apply_patch.py "$GITHUB_WORKSPACE/src"
 
-          # Fix one extra closing brace in the v2 VolumePanel source.
+          # v2 source has one extra brace; fix before replacing it with v3.
           python3 - <<'PY'
           from pathlib import Path
           p = Path("src/app/src/main/java/com/expressive/keyboard/VolumePanel.kt")
@@ -44,13 +44,20 @@ jobs:
           p.write_text(s, encoding="utf-8")
           PY
 
+          # Replace the volume panel with the new v3 source.
+          cat builder/expressive_builder/v3/VolumePanel.part* >             src/app/src/main/java/com/expressive/keyboard/VolumePanel.kt
+
           python3 - <<'PY'
           from pathlib import Path
           p = Path("src/app/build.gradle.kts")
           s = p.read_text(encoding="utf-8")
           s = s.replace("versionCode = 15", "versionCode = (System.currentTimeMillis() / 1000L).toInt()")
-          s = s.replace('versionName = "11.1.1"', 'versionName = "11.1.1-custom.2"')
+          s = s.replace('versionName = "11.1.1"', 'versionName = "11.1.1-custom.3"')
           s = s.replace('            applicationIdSuffix = ".debug"\n', '')
+          dep = '    implementation("com.caverock:androidsvg-aar:1.4")\n'
+          if dep not in s:
+              s = s.replace('    implementation("androidx.profileinstaller:profileinstaller:1.3.1")',
+                            dep + '    implementation("androidx.profileinstaller:profileinstaller:1.3.1")')
           p.write_text(s, encoding="utf-8")
           PY
 
@@ -82,7 +89,7 @@ jobs:
           APK="$(find src/app/build/outputs/apk/debug -name '*.apk' | head -n 1)"
           test -n "$APK"
           mkdir -p artifact
-          cp "$APK" artifact/ExpressiveKeyboard-pixel-hitbox-v2-unsigned.apk
+          cp "$APK" artifact/ExpressiveKeyboard-volume-v3-unsigned.apk
           BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
           test -f "$BT/lib/apksigner.jar"
           cp "$BT/lib/apksigner.jar" artifact/apksigner.jar
@@ -90,7 +97,7 @@ jobs:
       - name: Upload APK build
         uses: actions/upload-artifact@v4
         with:
-          name: ExpressiveKeyboard-pixel-hitbox-v2-unsigned
+          name: ExpressiveKeyboard-volume-v3-unsigned
           path: artifact/*
           if-no-files-found: error
           retention-days: 1
