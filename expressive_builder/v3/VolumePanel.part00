@@ -1,0 +1,174 @@
+package com.expressive.keyboard
+
+import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.animation.ValueAnimator
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.SharedPreferences
+import android.graphics.Canvas
+import android.graphics.Color as AndroidColor
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RectF
+import android.media.AudioManager
+import android.net.Uri
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
+import android.view.Gravity
+import android.view.HapticFeedbackConstants
+import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.View
+import android.view.WindowManager
+import android.view.accessibility.AccessibilityEvent
+import android.view.animation.AccelerateInterpolator
+import android.view.animation.DecelerateInterpolator
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccessibilityNew
+import androidx.compose.material.icons.rounded.Animation
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.FormatColorFill
+import androidx.compose.material.icons.rounded.Height
+import androidx.compose.material.icons.rounded.HourglassBottom
+import androidx.compose.material.icons.rounded.Opacity
+import androidx.compose.material.icons.rounded.Percent
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.SwapHoriz
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.UploadFile
+import androidx.compose.material.icons.rounded.Vibration
+import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.app.NotificationCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.caverock.androidsvg.SVG
+import java.io.ByteArrayOutputStream
+import java.io.File
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
+
+/** Compact Pixel-like global volume overlay with optional Expressive shapes. */
+data class VolumePanelSettings(
+    val enabled: Boolean = true,
+    val style: String = "PIXEL", // PIXEL | EXPRESSIVE
+    val colorMode: String = "SYSTEM", // SYSTEM | KEYBOARD | CUSTOM
+    val shapePreset: String = ExpressiveShapePreset.COOKIE_12.id,
+    val waveCount: Int = 12,
+    val waveDepthPercent: Float = 6f,
+    val position: String = "RIGHT",
+    val widthDp: Float = 62f,
+    val heightDp: Float = 290f,
+    val trackWidthDp: Float = 30f,
+    val cornerDp: Float = 31f,
+    val sideOffsetDp: Float = 10f,
+    val verticalOffsetDp: Float = 0f,
+    val opacity: Float = 0.96f,
+    val timeoutMs: Int = 1750,
+    val showPercent: Boolean = false,
+    val animate: Boolean = true,
+    val haptic: Boolean = true,
+    val backgroundColor: Int = 0,
+    val accentColor: Int = 0,
+    val muteSvg: String = "",
+    val mediaSvg: String = "",
+    val settingsSvg: String = ""
+)
+
+object VolumePanelPrefs {
+    private const val PREFS = "expressive_volume_panel_v2"
+    private const val SCHEMA = 3
+    private val state = mutableStateOf(VolumePanelSettings())
+    private var listener: SharedPreferences.OnSharedPreferenceChangeListener? = null
+
+    private fun prefs(context: Context): SharedPreferences =
+        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    fun ensureInit(context: Context) {
+        if (listener != null) return
+        val p = prefs(context)
+        migrate(p)
+        state.value = read(p)
+        val l = SharedPreferences.OnSharedPreferenceChangeListener { sp, _ -> state.value = read(sp) }
+        listener = l
+        p.registerOnSharedPreferenceChangeListener(l)
+    }
+
+    private fun migrate(p: SharedPreferences) {
+        val version = p.getInt("schema_version", 0)
+        if (version >= SCHEMA) return
+        val preset = ExpressiveShapePreset.fromId(
+            p.getString("shape_preset", ExpressiveShapePreset.COOKIE_12.id)
+                ?: ExpressiveShapePreset.COOKIE_12.id
+        )
+        // v2 was visually much too wide. Reset only geometry; keep the user's theme/side choices.
+        p.edit()
+            .putInt("schema_version", SCHEMA)
+            .putFloat("width_dp", 62f)
+            .putFloat("height_dp", 290f)
+            .putFloat("track_width_dp", 30f)
+            .putFloat("corner_dp", 31f)
+            .putFloat("opacity", 0.96f)
+            .putInt("wave_count", preset.defaultWaves)
+            .putFloat("wave_depth_percent", preset.defaultAmplitude)
+            .apply()
+    }
+
+    fun current(context: Context): VolumePanelSettings {
+        ensureInit(context)
+        return state.value
+    }
+
+    @Composable
+   
