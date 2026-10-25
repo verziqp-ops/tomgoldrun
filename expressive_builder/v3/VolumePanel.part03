@@ -1,0 +1,164 @@
+lean("haptic", it) }
+                }
+                SliderItem(
+                    Icons.Rounded.HourglassBottom, "Время на экране", s.timeoutMs.toFloat(), 700f..5000f,
+                    format = { "${String.format("%.1f", it / 1000f)} с" },
+                    onCommit = { VolumePanelPrefs.edit(context) { putInt("timeout_ms", it.roundToInt()) } }
+                )
+            }
+        }
+    }
+
+    if (colorPicker != null) {
+        val current = if (colorPicker == "background") s.backgroundColor else s.accentColor
+        val auto = if (colorPicker == "background") palette.background else palette.accent
+        VolumeColorDialog(
+            title = if (colorPicker == "background") "Фон панели" else "Акцент панели",
+            current = current,
+            auto = auto,
+            onDismiss = { colorPicker = null }
+        ) { value ->
+            VolumePanelPrefs.edit(context) {
+                if (colorPicker == "background") putInt("background_color", value) else putInt("accent_color", value)
+            }
+            colorPicker = null
+        }
+    }
+}
+
+@Composable
+private fun SvgPickerItem(title: String, custom: Boolean, onClick: () -> Unit) {
+    ActionItem(
+        Icons.Rounded.UploadFile,
+        title,
+        if (custom) "Свой SVG установлен — нажмите, чтобы заменить" else "Встроенный SVG — нажмите, чтобы загрузить свой",
+        onClick = onClick,
+        trailing = {
+            if (custom) Icon(Icons.Rounded.Check, null, tint = MaterialTheme.colorScheme.primary)
+            else Text("SVG", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+        }
+    )
+}
+
+@Composable
+private fun VolumeShapePicker(selected: String, onSelect: (ExpressiveShapePreset) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(ExpressiveShapePreset.entries) { preset ->
+            val isSelected = selected == preset.id
+            val spec = WavySpec(preset.profile, preset.defaultWaves, preset.defaultAmplitude / 100f)
+            Column(
+                Modifier.width(72.dp).clip(RoundedCornerShape(20.dp))
+                    .clickable { onSelect(preset) }.padding(vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Box(
+                    Modifier.size(56.dp).wavyBackground(spec, if (isSelected) cs.primary else cs.secondaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isSelected) Icon(Icons.Rounded.Check, null, tint = cs.onPrimary)
+                }
+                Text(
+                    tr(preset.title), style = MaterialTheme.typography.labelMedium,
+                    color = if (isSelected) cs.primary else cs.onSurfaceVariant, maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun VolumeColorDialog(
+    title: String,
+    current: Int,
+    auto: Color,
+    onDismiss: () -> Unit,
+    onSelect: (Int) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(tr(title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(
+                        Modifier.size(44.dp).clip(CircleShape).background(auto).clickable { onSelect(0) },
+                        contentAlignment = Alignment.Center
+                    ) { Icon(Icons.Rounded.Refresh, null, tint = contentColorFor(auto)) }
+                    Text(tr("Авто (из темы)"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(SWATCHES) { c -> ColorDot(Color(c), current == c) { onSelect(c) } }
+                }
+            }
+        },
+        confirmButton = { Button(onClick = onDismiss) { Text(tr("Готово")) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Отмена")) } }
+    )
+}
+
+private fun saveVolumeSvg(context: Context, uri: Uri, target: String): String? = runCatching {
+    val input = context.contentResolver.openInputStream(uri) ?: return@runCatching null
+    val out = ByteArrayOutputStream()
+    input.use { stream ->
+        val buffer = ByteArray(8192)
+        var total = 0
+        while (true) {
+            val n = stream.read(buffer)
+            if (n <= 0) break
+            total += n
+            if (total > 512 * 1024) error("SVG too large")
+            out.write(buffer, 0, n)
+        }
+    }
+    val xml = out.toString(Charsets.UTF_8.name()).trim()
+    val lower = xml.lowercase()
+    require("<svg" in lower) { "Not SVG" }
+    require("<script" !in lower && "<foreignobject" !in lower) { "Unsafe SVG" }
+    require("http://" !in lower && "https://" !in lower) { "External resources are not allowed" }
+    SVG.getFromString(xml)
+    val file = File(context.filesDir, "volume_icon_${target}.svg")
+    file.writeText(xml, Charsets.UTF_8)
+    file.absolutePath
+}.getOrNull()
+
+/**
+ * Global volume-key service. Uses TYPE_ACCESSIBILITY_OVERLAY and receives ACTION_OUTSIDE,
+ * so a normal tap on the app underneath hides the panel without swallowing that tap.
+ */
+class VolumePanelAccessibilityService : AccessibilityService() {
+    private val main = Handler(Looper.getMainLooper())
+    private lateinit var audio: AudioManager
+    private lateinit var wm: WindowManager
+    private var panel: ExpressiveVolumeView? = null
+    private var params: WindowManager.LayoutParams? = null
+    private var passthroughKeyCode = KeyEvent.KEYCODE_UNKNOWN
+
+    private val hide = Runnable { hidePanel() }
+    private val leaveForeground = Runnable {
+        if (Build.VERSION.SDK_INT >= 24) stopForeground(STOP_FOREGROUND_REMOVE)
+        else @Suppress("DEPRECATION") stopForeground(true)
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        VolumePanelPrefs.ensureInit(this)
+        KeyboardPrefs.ensureInit(this)
+        audio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val info = serviceInfo
+        info.flags = info.flags or AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
+        serviceInfo = info
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    override fun onInterrupt() = Unit
+
+    override fun onKeyEvent(event: KeyEvent): Boolean {
+        val s = VolumePanelPrefs.current(this)
+        if (!s.enabled) return false
+        val direction = when (event.keyC
