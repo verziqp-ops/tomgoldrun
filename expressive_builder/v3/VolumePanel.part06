@@ -1,0 +1,147 @@
+ + actionSize / 2f, pad + actionSize)
+        drawActionShape(canvas, muteRect.centerX(), muteRect.centerY(), actionSize / 2f, colors.accent, true)
+        drawSvgIcon(canvas, insetRect(muteRect, actionSize * 0.25f), settings.muteSvg, DEFAULT_MUTE_SVG, colors.onAccent)
+
+        val bottomPad = dp(7f)
+        val settingsSize = min(actionSize, dp(42f))
+        settingsRect.set(cx - settingsSize / 2f, h - bottomPad - settingsSize, cx + settingsSize / 2f, h - bottomPad)
+        drawActionShape(canvas, settingsRect.centerX(), settingsRect.centerY(), settingsSize / 2f, colors.surface, settings.style == "EXPRESSIVE")
+        drawSvgIcon(canvas, insetRect(settingsRect, settingsSize * 0.27f), settings.settingsSvg, DEFAULT_SETTINGS_SVG, colors.icon)
+
+        val sliderTop = muteRect.bottom + dp(7f)
+        val sliderBottom = settingsRect.top - dp(7f)
+        val sliderW = min(dp(settings.trackWidthDp), w - dp(16f)).coerceAtLeast(dp(20f))
+        sliderRect.set(cx - sliderW / 2f, sliderTop, cx + sliderW / 2f, sliderBottom)
+        paint.color = colors.surface
+        canvas.drawRoundRect(sliderRect, sliderW / 2f, sliderW / 2f, paint)
+
+        val innerInset = dp(3f).coerceAtMost(sliderW * 0.16f)
+        val inner = RectF(
+            sliderRect.left + innerInset,
+            sliderRect.top + innerInset,
+            sliderRect.right - innerInset,
+            sliderRect.bottom - innerInset
+        )
+        paint.color = colors.track
+        canvas.drawRoundRect(inner, inner.width() / 2f, inner.width() / 2f, paint)
+
+        // Hard clip to the rounded track. The active fill can never protrude outside it.
+        val save = canvas.save()
+        val clip = Path().apply { addRoundRect(inner, inner.width() / 2f, inner.width() / 2f, Path.Direction.CW) }
+        canvas.clipPath(clip)
+        val activeTop = inner.bottom - inner.height() * fraction
+        paint.color = colors.accent
+        canvas.drawRect(inner.left, activeTop, inner.right, inner.bottom, paint)
+        canvas.restoreToCount(save)
+
+        val iconSize = min(inner.width() * 0.64f, dp(18f))
+        val iconCy = inner.top + max(iconSize * 0.72f, dp(12f))
+        val iconRect = RectF(cx - iconSize / 2f, iconCy - iconSize / 2f, cx + iconSize / 2f, iconCy + iconSize / 2f)
+        drawSvgIcon(canvas, iconRect, settings.mediaSvg, DEFAULT_MEDIA_SVG, colors.icon)
+
+        if (settings.showPercent && fraction > 0.16f) {
+            paint.color = colors.onAccent
+            paint.textAlign = Paint.Align.CENTER
+            paint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            paint.textSize = dp(9.5f)
+            val baseline = (inner.bottom - dp(8f)).coerceAtLeast(activeTop + dp(12f))
+            canvas.drawText("${(fraction * 100f).roundToInt()}%", cx, baseline, paint)
+        }
+    }
+
+    private fun insetRect(rect: RectF, inset: Float) = RectF(rect.left + inset, rect.top + inset, rect.right - inset, rect.bottom - inset)
+
+    private fun drawActionShape(canvas: Canvas, cx: Float, cy: Float, radius: Float, color: Int, expressive: Boolean) {
+        paint.style = Paint.Style.FILL
+        paint.color = color
+        if (!expressive || settings.style != "EXPRESSIVE") {
+            canvas.drawCircle(cx, cy, radius, paint)
+            return
+        }
+        val preset = ExpressiveShapePreset.fromId(settings.shapePreset)
+        if (preset.profile == ShapeProfile.CIRCLE || settings.waveDepthPercent <= 0.05f) {
+            canvas.drawCircle(cx, cy, radius, paint)
+            return
+        }
+        val waves = settings.waveCount.coerceIn(3, 24)
+        val amp = (settings.waveDepthPercent / 100f).coerceIn(0f, 0.16f)
+        val steps = (waves * 20).coerceIn(120, 360)
+        path.reset()
+        for (i in 0 until steps) {
+            val t = i.toDouble() / steps * 2.0 * Math.PI
+            val k = when (preset.profile) {
+                ShapeProfile.SINE -> 1f - amp + amp * cos(waves * t).toFloat()
+                ShapeProfile.LOBES -> 1f - amp + amp * kotlin.math.abs(cos(waves / 2.0 * t)).toFloat()
+                ShapeProfile.CIRCLE -> 1f
+            }
+            val a = t - Math.PI / 2.0 + Math.PI / 4.0
+            val x = cx + radius * k * kotlin.math.cos(a).toFloat()
+            val y = cy + radius * k * kotlin.math.sin(a).toFloat()
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        path.close()
+        canvas.drawPath(path, paint)
+    }
+
+    private fun drawSvgIcon(canvas: Canvas, rect: RectF, customPath: String, defaultTemplate: String, tint: Int) {
+        val customFile = customPath.takeIf { it.isNotBlank() }?.let(::File)?.takeIf { it.isFile }
+        val key: String
+        val xml: String
+        if (customFile != null) {
+            key = "file:${customFile.absolutePath}:${customFile.lastModified()}"
+            xml = runCatching { customFile.readText(Charsets.UTF_8) }.getOrDefault(defaultTemplate.withTint(tint))
+        } else {
+            key = "default:${defaultTemplate.hashCode()}:$tint"
+            xml = defaultTemplate.withTint(tint)
+        }
+        val svg = svgCache[key] ?: runCatching { SVG.getFromString(xml) }.getOrNull()?.also { svgCache[key] = it }
+        if (svg != null) {
+            runCatching { svg.renderToCanvas(canvas, rect) }
+        }
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
+            onOutsideTouch?.invoke()
+            return true
+        }
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                if (muteRect.contains(event.x, event.y)) {
+                    if (settings.haptic) performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                    onMuteToggle?.invoke()
+                    return true
+                }
+                if (settingsRect.contains(event.x, event.y)) {
+                    if (settings.haptic) performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    onSettingsClick?.invoke()
+                    return true
+                }
+                if (sliderRect.contains(event.x, event.y)) {
+                    dragging = true
+                    updateSlider(event.y)
+                    return true
+                }
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (dragging) updateSlider(event.y)
+                return true
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                dragging = false
+                lastHapticStep = -1
+                performClick()
+                return true
+            }
+        }
+        return super.onTouchEvent(event)
+    }
+
+    private fun updateSlider(y: Float) {
+        val f = (1f - ((y - sliderRect.top) / sliderRect.height())).coerceIn(0f, 1f)
+        fractionAnimator?.cancel()
+        fraction = f
+        targetFraction = f
+        invalidate()
+        val step = (f * 24f).roundToI
