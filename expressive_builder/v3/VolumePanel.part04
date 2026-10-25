@@ -1,0 +1,160 @@
+ode) {
+            KeyEvent.KEYCODE_VOLUME_UP -> AudioManager.ADJUST_RAISE
+            KeyEvent.KEYCODE_VOLUME_DOWN -> AudioManager.ADJUST_LOWER
+            KeyEvent.KEYCODE_VOLUME_MUTE -> AudioManager.ADJUST_TOGGLE_MUTE
+            else -> return false
+        }
+
+        if (passthroughKeyCode == event.keyCode) {
+            if (event.action == KeyEvent.ACTION_UP) passthroughKeyCode = KeyEvent.KEYCODE_UNKNOWN
+            return false
+        }
+        if (event.action != KeyEvent.ACTION_DOWN) return true
+
+        val stream = preferredStream()
+        val min = if (Build.VERSION.SDK_INT >= 28) runCatching { audio.getStreamMinVolume(stream) }.getOrDefault(0) else 0
+        val max = runCatching { audio.getStreamMaxVolume(stream) }.getOrDefault(15).coerceAtLeast(min + 1)
+        val before = runCatching { audio.getStreamVolume(stream) }.getOrDefault(min).coerceIn(min, max)
+
+        enterAudioForegroundWindow()
+        runCatching { audio.adjustStreamVolume(stream, direction, 0) }
+        val after = runCatching { audio.getStreamVolume(stream) }.getOrDefault(before).coerceIn(min, max)
+        val blocked = when (direction) {
+            AudioManager.ADJUST_RAISE -> before < max && after == before
+            AudioManager.ADJUST_LOWER -> before > min && after == before
+            else -> false
+        }
+        if (blocked) {
+            passthroughKeyCode = event.keyCode
+            hidePanel()
+            return false
+        }
+
+        showPanel(stream)
+        return true
+    }
+
+    private fun preferredStream(): Int = when (audio.mode) {
+        AudioManager.MODE_IN_CALL, AudioManager.MODE_IN_COMMUNICATION -> AudioManager.STREAM_VOICE_CALL
+        else -> AudioManager.STREAM_MUSIC
+    }
+
+    private fun showPanel(stream: Int = preferredStream()) {
+        val s = VolumePanelPrefs.current(this)
+        val min = if (Build.VERSION.SDK_INT >= 28) runCatching { audio.getStreamMinVolume(stream) }.getOrDefault(0) else 0
+        val max = runCatching { audio.getStreamMaxVolume(stream) }.getOrDefault(15).coerceAtLeast(min + 1)
+        val value = runCatching { audio.getStreamVolume(stream) }.getOrDefault(min).coerceIn(min, max)
+        val colors = resolvePanelColors(this, s)
+
+        val v = panel ?: ExpressiveVolumeView(this).also { view ->
+            view.alpha = 0f
+            view.onFractionChanged = { fraction ->
+                enterAudioForegroundWindow()
+                val active = preferredStream()
+                val lo = if (Build.VERSION.SDK_INT >= 28) runCatching { audio.getStreamMinVolume(active) }.getOrDefault(0) else 0
+                val hi = runCatching { audio.getStreamMaxVolume(active) }.getOrDefault(15).coerceAtLeast(lo + 1)
+                val next = lo + ((hi - lo) * fraction).roundToInt()
+                runCatching { audio.setStreamVolume(active, next.coerceIn(lo, hi), 0) }
+                showPanel(active)
+            }
+            view.onMuteToggle = {
+                enterAudioForegroundWindow()
+                val active = preferredStream()
+                runCatching { audio.adjustStreamVolume(active, AudioManager.ADJUST_TOGGLE_MUTE, 0) }
+                showPanel(active)
+            }
+            view.onSettingsClick = {
+                runCatching { startActivity(Intent(Settings.ACTION_SOUND_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                hidePanel()
+            }
+            view.onOutsideTouch = { hidePanel() }
+            panel = view
+        }
+        v.bind(s, value - min, max - min, colors, animateValue = s.animate)
+
+        val lp = buildLayoutParams(s)
+        val attached = v.parent != null
+        if (!attached) {
+            params = lp
+            runCatching { wm.addView(v, lp) }
+        } else {
+            params = lp
+            runCatching { wm.updateViewLayout(v, lp) }
+        }
+
+        v.visibility = View.VISIBLE
+        v.animate().cancel()
+        val edge = if (s.position == "LEFT") -dp(20f) else dp(20f)
+        if (s.animate) {
+            if (v.alpha < 0.1f) {
+                v.alpha = 0f
+                v.translationX = edge
+                v.scaleX = 0.97f
+                v.scaleY = 0.97f
+            }
+            v.animate()
+                .alpha(1f).translationX(0f).scaleX(1f).scaleY(1f)
+                .setDuration(180L).setInterpolator(DecelerateInterpolator(1.8f)).start()
+        } else {
+            v.alpha = 1f
+            v.translationX = 0f
+            v.scaleX = 1f
+            v.scaleY = 1f
+        }
+        main.removeCallbacks(hide)
+        main.postDelayed(hide, s.timeoutMs.toLong())
+    }
+
+    private fun hidePanel() {
+        val v = panel ?: return
+        val s = VolumePanelPrefs.current(this)
+        v.animate().cancel()
+        if (s.animate && v.visibility == View.VISIBLE) {
+            val edge = if (s.position == "LEFT") -dp(14f) else dp(14f)
+            v.animate().alpha(0f).translationX(edge).scaleX(0.985f).scaleY(0.985f)
+                .setDuration(125L).setInterpolator(AccelerateInterpolator(1.5f))
+                .withEndAction { v.visibility = View.GONE }.start()
+        } else {
+            v.alpha = 0f
+            v.visibility = View.GONE
+        }
+    }
+
+    private fun buildLayoutParams(s: VolumePanelSettings): WindowManager.LayoutParams {
+        val d = resources.displayMetrics.density
+        return WindowManager.LayoutParams(
+            (s.widthDp * d).roundToInt(),
+            (s.heightDp * d).roundToInt(),
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            android.graphics.PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.CENTER_VERTICAL or if (s.position == "LEFT") Gravity.START else Gravity.END
+            x = (s.sideOffsetDp * d).roundToInt()
+            y = (s.verticalOffsetDp * d).roundToInt()
+        }
+    }
+
+    private fun dp(v: Float) = v * resources.displayMetrics.density
+
+    private fun enterAudioForegroundWindow() {
+        if (Build.VERSION.SDK_INT < 37) return
+        if (Build.VERSION.SDK_INT >= 26) {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (nm.getNotificationChannel(CHANNEL) == null) {
+                nm.createNotificationChannel(
+                    NotificationChannel(CHANNEL, "Expressive volume", NotificationManager.IMPORTANCE_MIN).apply {
+                        description = "Short-lived compatibility notification while changing volume"
+                        setSound(null, null)
+                        enableVibration(false)
+                        setShowBadge(false)
+                    }
+                )
+            }
+        }
+        val notification = NotificationCompat.Builder(this, CHANNEL)
+            .setSmallIcon(R.mipmap.ic_launcher)
+         
