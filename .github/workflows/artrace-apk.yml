@@ -135,6 +135,14 @@ jobs:
           base64 -d updates/ARTrace-v1.7-overrides.b64 | tar -xJ -C artrace-src
           grep -q 'versionCode 8' artrace-src/app/build.gradle
           grep -q 'segmentByColor' artrace-src/app/src/main/java/com/dryguny/artrace/AiObjectSegmenter.java
+      - name: AR Trace 1.8 object-only segmentation (no color fallbacks)
+        run: |
+          base64 -d updates/ARTrace-v1.8.patch.b64 | xz -d > /tmp/artrace-v18.patch
+          patch --batch --dry-run -p1 -d artrace-src < /tmp/artrace-v18.patch
+          patch --batch -p1 -d artrace-src < /tmp/artrace-v18.patch
+          grep -q "versionCode 9" artrace-src/app/build.gradle
+          ! grep -q 'segmentByColor' artrace-src/app/src/main/java/com/dryguny/artrace/AiObjectSegmenter.java
+          ! grep -q 'grabCut(' artrace-src/app/src/main/java/com/dryguny/artrace/TrackingEngine.java
       - name: Compile APK
         run: gradle --no-daemon -p artrace-src :app:assembleDebug
       - uses: actions/upload-artifact@v4
