@@ -130,6 +130,11 @@ jobs:
           base64 -d updates/ARTrace-v1.6-freeze.patch.b64 | xz -d > /tmp/artrace-v16-freeze.patch
           patch --batch --dry-run -p1 -d artrace-src < /tmp/artrace-v16-freeze.patch
           patch --batch -p1 -d artrace-src < /tmp/artrace-v16-freeze.patch
+      - name: Install AR Trace 1.7 touch-to-recognize controls
+        run: |
+          base64 -d updates/ARTrace-v1.7-overrides.b64 | tar -xJ -C artrace-src
+          grep -q 'versionCode 8' artrace-src/app/build.gradle
+          grep -q 'segmentByColor' artrace-src/app/src/main/java/com/dryguny/artrace/AiObjectSegmenter.java
       - name: Compile APK
         run: gradle --no-daemon -p artrace-src :app:assembleDebug
       - uses: actions/upload-artifact@v4
