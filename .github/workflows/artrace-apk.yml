@@ -45,8 +45,7 @@ jobs:
           s = s.replace(old, "private TrackingEngine tracker;", 1)
           old = 'if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startCamera();'
           assert old in s, "Camera start call not found"
-          s = s.replace(old, 'tracker = new TrackingEngine();\\n        ' + old, 1)
-          s = s.replace('\\\\n', '\\n')
+          s = s.replace(old, "tracker = new TrackingEngine();" + chr(10) + "        " + old, 1)
           p.write_text(s)
           p = Path("artrace-src/app/build.gradle")
           t = p.read_text()
