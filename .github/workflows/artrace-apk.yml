@@ -119,6 +119,13 @@ jobs:
           s=s[:start]+s[start:end].replace("update.","shownUpdate.").replace("update)","shownUpdate)")+s[end:]
           p.write_text(s)
           PY
+      - name: Apply AR Trace 1.6 UI AI preview and tracking optimizations
+        run: |
+          base64 -d updates/ARTrace-v1.6.patch.b64 | xz -d > /tmp/artrace-v16.patch
+          cd artrace-src
+          git apply --check /tmp/artrace-v16.patch
+          git apply /tmp/artrace-v16.patch
+          grep -q 'versionCode 7' app/build.gradle
       - name: Compile APK
         run: gradle --no-daemon -p artrace-src :app:assembleDebug
       - uses: actions/upload-artifact@v4
